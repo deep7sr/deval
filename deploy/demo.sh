@@ -29,10 +29,12 @@ case "${1:-}" in
       {"role":"user","content":"Where is the Eiffel Tower located?"}
     ]}' ;;
   partial)
-    DESC="PARTIAL — one claim is backed by the evidence, one is not (~0.5)"
+    DESC="PARTIAL — evidence mixes a correct and an incorrect fact (~0.5)"
+    # France->Paris matches the evidence (grounded); Italy->London is wrong, so
+    # the model contradicts it (unfaithful). One of two claims -> ~0.5.
     DATA='{"model":"'"$MODEL"'","messages":[
-      {"role":"assistant","content":"--- Retrieved Evidence ---\nOur headquarters is in Berlin, Germany."},
-      {"role":"user","content":"Where is your headquarters, and roughly what is the population of that city?"}
+      {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nLondon is the capital of Italy."},
+      {"role":"user","content":"What is the capital of France, and what is the capital of Italy?"}
     ]}' ;;
   nomarker)
     DESC="NO EVIDENCE — no marker in the request, guardrail does not run"
