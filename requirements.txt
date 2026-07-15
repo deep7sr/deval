@@ -1,0 +1,7 @@
+# Runtime dependencies for the LiteLLM + DeepEval hallucination guardrail.
+# Pinned loosely for now; the infra team can lock exact versions for prod.
+litellm
+deepeval
+
+# Test-only
+pytest
