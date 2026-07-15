@@ -55,6 +55,12 @@ FAITHFULNESS_THRESHOLD = _get_float("GUARDRAIL_FAITHFULNESS_THRESHOLD", 0.7)
 # from whatever model actually served the chat completion.
 JUDGE_MODEL = _get_str("GUARDRAIL_JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
 
+# --- Operating mode ------------------------------------------------------
+# monitor   : score + log only, never alter the response (safe rollout mode).
+# block     : replace an ungrounded response with FALLBACK_MESSAGE, no retry.
+# remediate : run the self-correction retry loop, then fall back if still bad.
+MODE = _get_str("GUARDRAIL_MODE", "remediate")
+
 # --- Remediation (self-correction retry loop) ----------------------------
 # When a response is judged ungrounded, re-prompt the SAME model that produced
 # it with the specific unsupported claims, up to this many times, before
@@ -64,6 +70,10 @@ MAX_RETRIES = _get_int("GUARDRAIL_MAX_RETRIES", 3)
 # Total wall-clock budget (seconds) for the whole remediation loop, so a slow
 # case can't hang the user's request indefinitely.
 RETRY_TIME_BUDGET_SECONDS = _get_float("GUARDRAIL_RETRY_TIME_BUDGET_SECONDS", 30.0)
+
+# Temperature for corrective retry regenerations. A small positive value nudges
+# the model off an identical repeat of the same ungrounded answer.
+RETRY_TEMPERATURE = _get_float("GUARDRAIL_RETRY_TEMPERATURE", 0.3)
 
 # Message returned to the user when all retries still fail the grounding check.
 FALLBACK_MESSAGE = _get_str(
