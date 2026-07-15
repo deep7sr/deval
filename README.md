@@ -149,8 +149,12 @@ guardrails:
     litellm_params:
       guardrail: guardrail.hook.HallucinationGuardrail
       mode: "post_call"
-      default_on: true
+      default_on: false      # opt-in per virtual key (see Step 5), NOT global
 ```
+
+`default_on: false` means the guardrail does **not** run on all traffic. Teams
+opt in by asking infra to enable it on their virtual key (Step 5). Requires the
+proxy to have a database (virtual keys are stored there).
 
 ### Step 4 — Provide the judge API key to the container
 
@@ -161,10 +165,38 @@ host shell). For the validated Groq judge:
 GROQ_API_KEY=gsk_…
 ```
 
-### Step 5 — Verify
+### Step 5 — Enable the guardrail on a team's virtual key (opt-in)
 
-Restart/redeploy and confirm the proxy boots with no import errors, then send a
-marker request and look for `GUARDRAIL … verdict: … passed=…` in the logs.
+The guardrail is **always-on for any key it is attached to**, and off for every
+other key. A team requests coverage; infra enables it on that team's key. This
+is done entirely at the key level — no config edit or restart per team.
+
+**Attach to a new key:**
+```bash
+curl -X POST 'http://<proxy>/key/generate' \
+  -H 'Authorization: Bearer <MASTER_KEY>' \
+  -H 'Content-Type: application/json' \
+  -d '{"guardrails": ["hallucination-guardrail"], "metadata": {"team": "team-name"}}'
+```
+
+**Attach to an existing key:**
+```bash
+curl -X POST 'http://<proxy>/key/update' \
+  -H 'Authorization: Bearer <MASTER_KEY>' \
+  -H 'Content-Type: application/json' \
+  -d '{"key": "sk-...the-team-key...", "guardrails": ["hallucination-guardrail"]}'
+```
+
+Requests made with that key now always run the guardrail; the team cannot turn
+it off. (The same `guardrails` list can also be set on a **team** via
+`/team/update`, or through the Admin UI.)
+
+### Step 6 — Verify
+
+Restart/redeploy and confirm the proxy boots with no import errors. Then send a
+marker request **using a key that has the guardrail attached** and look for
+`GUARDRAIL … verdict: … passed=…` in the logs. A request with a key that does
+NOT have it attached should pass through with no guardrail log line.
 
 ---
 
