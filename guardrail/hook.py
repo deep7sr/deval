@@ -18,6 +18,7 @@ response rather than breaking the user's request.
 """
 
 import logging
+import sys
 
 import litellm
 from litellm.integrations.custom_guardrail import CustomGuardrail
@@ -27,7 +28,17 @@ from .grounding import GroundingEvaluator
 from .parser import parse_messages
 from .remediation import remediate
 
+# Own logger with its own stdout handler so guardrail decisions always show up
+# in `docker logs`, regardless of how litellm/uvicorn configure the root logger.
 verbose_logger = logging.getLogger("guardrail.hallucination")
+if not verbose_logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(
+        logging.Formatter("%(asctime)s GUARDRAIL %(levelname)s %(message)s")
+    )
+    verbose_logger.addHandler(_handler)
+    verbose_logger.setLevel(config.LOG_LEVEL.upper())
+    verbose_logger.propagate = False
 
 _RETRY_FLAG = "guardrail_retry"
 

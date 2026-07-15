@@ -55,6 +55,11 @@ FAITHFULNESS_THRESHOLD = _get_float("GUARDRAIL_FAITHFULNESS_THRESHOLD", 0.7)
 # from whatever model actually served the chat completion.
 JUDGE_MODEL = _get_str("GUARDRAIL_JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
 
+# --- Logging -------------------------------------------------------------
+# Level for the guardrail's own logger. INFO surfaces every parse/skip/verdict/
+# remediation decision in the container logs so behaviour is observable.
+LOG_LEVEL = _get_str("GUARDRAIL_LOG_LEVEL", "INFO")
+
 # --- Operating mode ------------------------------------------------------
 # monitor   : score + log only, never alter the response (safe rollout mode).
 # block     : replace an ungrounded response with FALLBACK_MESSAGE, no retry.
