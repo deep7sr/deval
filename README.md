@@ -228,7 +228,10 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 | Env var | Default | Meaning |
 |---|---|---|
 | `GUARDRAIL_MODE` | `remediate` | `block` \| `remediate` |
-| `GUARDRAIL_JUDGE_MODEL` | `groq/llama-3.3-70b-versatile` | Judge model (litellm SDK id) |
+| `GUARDRAIL_JUDGE_MODEL` | `groq/llama-3.3-70b-versatile` | Judge model (any litellm SDK id) |
+| `GUARDRAIL_JUDGE_API_BASE` | *(unset)* | Endpoint for a self-hosted judge (Ollama/vLLM/TGI) |
+| `GUARDRAIL_JUDGE_API_KEY` | *(unset)* | Key for the judge endpoint (dummy for local servers) |
+| `GUARDRAIL_JUDGE_JSON_MODE` | `true` | Request JSON-mode output; set false for models that don't support it |
 | `GUARDRAIL_FAITHFULNESS_THRESHOLD` | `0.7` | Pass if score ≥ threshold |
 | `GUARDRAIL_MAX_RETRIES` | `3` | Corrective retries before fallback |
 | `GUARDRAIL_RETRY_TIME_BUDGET_SECONDS` | `30` | Wall-clock cap on the retry loop |
@@ -239,6 +242,30 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 | `GUARDRAIL_LOG_LEVEL` | `INFO` | Guardrail logger level |
 
 ---
+
+## Swapping the judge model (e.g. to a self-hosted open-source model)
+
+The judge is addressed entirely through the LiteLLM SDK, so changing it is
+**configuration, not code** — set env vars, no code edits:
+
+- **Ollama** (e.g. Gemma): serve `ollama pull gemma3:4b`, then
+  ```
+  GUARDRAIL_JUDGE_MODEL=ollama_chat/gemma3:4b
+  GUARDRAIL_JUDGE_API_BASE=http://<ollama-host>:11434
+  ```
+- **vLLM / TGI / any OpenAI-compatible server**:
+  ```
+  GUARDRAIL_JUDGE_MODEL=openai/google/gemma-3-4b-it
+  GUARDRAIL_JUDGE_API_BASE=http://<server>:8000/v1
+  GUARDRAIL_JUDGE_API_KEY=<dummy-or-real>
+  ```
+- If the model errors on JSON response_format, set `GUARDRAIL_JUDGE_JSON_MODE=false`.
+
+> **Accuracy caveat:** a small model (e.g. 4B) is a much weaker judge than a
+> 70B. Faithfulness judging (claim extraction + verification + JSON output) is
+> demanding, and small models produce noisier verdicts and less reliable JSON.
+> **Validate the chosen judge on a labelled set and tune the threshold before
+> trusting it to block** — this is the single most important production check.
 
 ## Operating modes
 

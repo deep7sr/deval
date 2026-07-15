@@ -52,8 +52,21 @@ SSL_VERIFY = _get_bool("GUARDRAIL_SSL_VERIFY", False)
 FAITHFULNESS_THRESHOLD = _get_float("GUARDRAIL_FAITHFULNESS_THRESHOLD", 0.7)
 
 # The DeepEval judge model, addressed through the LiteLLM SDK. Kept separate
-# from whatever model actually served the chat completion.
+# from whatever model actually served the chat completion. Any model string
+# LiteLLM understands works (hosted Groq/OpenAI/etc., or a self-hosted
+# open-source model via Ollama / vLLM / TGI).
 JUDGE_MODEL = _get_str("GUARDRAIL_JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
+
+# For a self-hosted / OpenAI-compatible judge endpoint (Ollama, vLLM, TGI, ...).
+# Leave unset for hosted providers that read their key from the environment
+# (e.g. Groq via GROQ_API_KEY). Example: http://ollama:11434
+JUDGE_API_BASE = os.environ.get("GUARDRAIL_JUDGE_API_BASE")
+JUDGE_API_KEY = os.environ.get("GUARDRAIL_JUDGE_API_KEY")
+
+# Whether to request JSON-mode structured output from the judge. Strong models
+# support it; some small/local models don't - set false if the judge errors on
+# response_format (DeepEval still parses JSON out of a plain-text reply).
+JUDGE_JSON_MODE = _get_bool("GUARDRAIL_JUDGE_JSON_MODE", True)
 
 # --- Logging -------------------------------------------------------------
 # Level for the guardrail's own logger. INFO surfaces every parse/skip/verdict/
