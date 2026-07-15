@@ -28,6 +28,12 @@ case "${1:-}" in
       {"role":"assistant","content":"--- Retrieved Evidence ---\nThe Eiffel Tower is located in Rome, Italy."},
       {"role":"user","content":"Where is the Eiffel Tower located?"}
     ]}' ;;
+  partial)
+    DESC="PARTIAL — one claim is backed by the evidence, one is not (~0.5)"
+    DATA='{"model":"'"$MODEL"'","messages":[
+      {"role":"assistant","content":"--- Retrieved Evidence ---\nOur headquarters is in Berlin, Germany."},
+      {"role":"user","content":"Where is your headquarters, and roughly what is the population of that city?"}
+    ]}' ;;
   nomarker)
     DESC="NO EVIDENCE — no marker in the request, guardrail does not run"
     DATA='{"model":"'"$MODEL"'","messages":[
