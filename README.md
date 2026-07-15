@@ -83,6 +83,7 @@ The guardrail only runs when the request carries evidence like this — otherwis
 it passes the request through untouched:
 ```json
 "messages": [
+  { "role": "system", "content": "Answer using only the retrieved evidence." },
   { "role": "assistant", "content": "--- Retrieved Evidence ---\nFact one.\nFact two." },
   { "role": "user", "content": "The question?" }
 ]
@@ -90,6 +91,9 @@ it passes the request through untouched:
 - Evidence goes in an `assistant` message whose content **starts exactly** with
   `--- Retrieved Evidence ---`, one fact per line.
 - The question is the final `user` message. Both must be plain strings.
+- A `system` message (or any other message) may be present anywhere — only the
+  final `user` message and the nearest preceding `assistant` evidence message
+  are used.
 
 ## Before you let it block real traffic
 - **Validate the judge on your own labelled examples and tune the threshold** —
