@@ -1,8 +1,10 @@
 # Guardrail test stack
 
-Minimal, self-contained LiteLLM proxy that runs the hallucination guardrail,
+Self-contained LiteLLM proxy + Postgres that runs the hallucination guardrail,
 for validating it end-to-end before the infra team promotes it to production.
-Runs on **port 4001** so it won't collide with a proxy already on 4000.
+The proxy runs on **host port 4001** so it won't collide with a proxy already on
+4000. Postgres is internal to the compose network (no host port) so it can't
+clash with any other database on the machine.
 
 ## Run
 

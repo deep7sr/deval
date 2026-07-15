@@ -1,7 +1,7 @@
-# Minimal LiteLLM config for validating the hallucination guardrail.
-# No database / MLflow here on purpose - this stack exists to prove the
-# guardrail end-to-end. The infra team layers DB, callbacks, etc. back on when
-# promoting to the production proxy.
+# LiteLLM config for validating the hallucination guardrail.
+# Includes a Postgres connection (via DATABASE_URL) so the DB-backed management
+# endpoints and admin UI work. No MLflow here - the infra team layers callbacks
+# etc. back on when promoting to the production proxy.
 
 model_list:
   # The model client requests go to (and that retries are routed back to).
@@ -36,3 +36,8 @@ guardrails:
 
 general_settings:
   master_key: sk-123
+  # DB connection comes from the DATABASE_URL env var (set in docker-compose.yml),
+  # which enables the management endpoints (/guardrails/list, admin UI) and
+  # spend logging - mirroring the production proxy.
+  store_model_in_db: true
+  store_prompts_in_spend_logs: true
