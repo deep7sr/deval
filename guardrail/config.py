@@ -89,6 +89,32 @@ ANSWER_RELEVANCY_FALLBACK_MESSAGE = _get_str(
     "rephrase it or add a little more detail so I can respond directly?",
 )
 
+# --- Contextual Relevancy scoring ----------------------------------------
+# Own namespace, independent of the other guardrails. Contextual Relevancy
+# grades the RETRIEVER (is the retrieved context relevant to the question?),
+# not the LLM's answer - so re-prompting the model can't fix a bad score. There
+# is deliberately NO remediate mode here.
+#
+# A response passes when the contextual-relevancy score is >= this threshold.
+CONTEXTUAL_RELEVANCY_THRESHOLD = _get_float(
+    "GUARDRAIL_CONTEXTUAL_RELEVANCY_THRESHOLD", 0.7
+)
+
+# block   : replace the answer with the fallback message when the retrieved
+#           context is judged irrelevant to the question (default).
+# observe : run the metric and log the verdict, but never alter the response
+#           (retrieval-quality signal only, for dashboards / shadow mode).
+CONTEXTUAL_RELEVANCY_MODE = _get_str("GUARDRAIL_CONTEXTUAL_RELEVANCY_MODE", "block")
+
+# Message returned to the user when the retrieved context is irrelevant and the
+# guardrail is in block mode.
+CONTEXTUAL_RELEVANCY_FALLBACK_MESSAGE = _get_str(
+    "GUARDRAIL_CONTEXTUAL_RELEVANCY_FALLBACK_MESSAGE",
+    "I couldn't find information relevant to your question in the material "
+    "available to me, so I'd rather not answer than risk giving you something "
+    "based on unrelated context.",
+)
+
 # --- Logging -------------------------------------------------------------
 # Level for the guardrail's own logger. INFO surfaces every parse/skip/verdict/
 # remediation decision in the container logs so behaviour is observable.

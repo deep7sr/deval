@@ -54,6 +54,19 @@ guardrails:
       mode: "post_call"
       default_on: true
 
+  # Contextual Relevancy guardrail. Grades the RETRIEVER (is the retrieved
+  # context relevant to the question?), not the answer - so it REQUIRES the
+  # evidence marker like faithfulness, and has NO remediation (re-prompting
+  # can't fix retrieval). Default mode is block; set
+  # GUARDRAIL_CONTEXTUAL_RELEVANCY_MODE=observe for a log-only retrieval-quality
+  # signal. Independent identity / namespace (GUARDRAIL_CONTEXTUAL_RELEVANCY_*).
+  - guardrail_name: "contextual-relevancy-guardrail"
+    litellm_params:
+      # <dir>/guardrail/contextual_relevancy_hook.py -> ContextualRelevancyGuardrail
+      guardrail: guardrail.contextual_relevancy_hook.ContextualRelevancyGuardrail
+      mode: "post_call"
+      default_on: true
+
 general_settings:
   master_key: sk-123
   # DB connection comes from the DATABASE_URL env var (set in docker-compose.yml),

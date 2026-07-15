@@ -10,8 +10,15 @@ from types import SimpleNamespace
 
 from guardrail.hook import HallucinationGuardrail
 from guardrail.relevancy_hook import AnswerRelevancyGuardrail
+from guardrail.contextual_relevancy_hook import ContextualRelevancyGuardrail
 
 import pytest
+
+_HOOKS = [
+    HallucinationGuardrail,
+    AnswerRelevancyGuardrail,
+    ContextualRelevancyGuardrail,
+]
 
 
 def _fake_response(content, **extra):
@@ -20,7 +27,7 @@ def _fake_response(content, **extra):
     return SimpleNamespace(choices=[choice])
 
 
-@pytest.mark.parametrize("guardrail", [HallucinationGuardrail, AnswerRelevancyGuardrail])
+@pytest.mark.parametrize("guardrail", _HOOKS)
 def test_set_output_overwrites_content_and_clears_reasoning(guardrail):
     resp = _fake_response(
         "off-topic original answer",
@@ -34,7 +41,7 @@ def test_set_output_overwrites_content_and_clears_reasoning(guardrail):
     assert msg.reasoning_content is None
 
 
-@pytest.mark.parametrize("guardrail", [HallucinationGuardrail, AnswerRelevancyGuardrail])
+@pytest.mark.parametrize("guardrail", _HOOKS)
 def test_set_output_without_reasoning_field_is_fine(guardrail):
     # A response that never carried a reasoning field must still be overwritten
     # cleanly (no crash from clearing an absent attribute).

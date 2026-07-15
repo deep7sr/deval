@@ -74,10 +74,12 @@ guardrail/            The guardrail package (this is what gets deployed)
   parser.py           Contract parser (+ marker-free parse_final_user_message)
   grounding.py        DeepEval FaithfulnessMetric wrapper
   relevancy.py        DeepEval AnswerRelevancyMetric wrapper
+  contextual_relevancy.py  DeepEval ContextualRelevancyMetric wrapper
   groq_judge.py       Judge model (litellm-backed DeepEvalBaseLLM)
   remediation.py      Self-correction retry loop (shared; per-metric prompts)
   hook.py             Faithfulness LiteLLM CustomGuardrail (post_call)
   relevancy_hook.py   Answer-relevancy LiteLLM CustomGuardrail (post_call)
+  contextual_relevancy_hook.py  Contextual-relevancy CustomGuardrail (post_call)
 tests/                Unit tests (no network) — run with: python -m pytest tests/ -q
 deploy/               Self-contained test stack (Dockerfile, compose, config.yaml)
 scripts/              Live smoke scripts
@@ -85,27 +87,36 @@ scripts/              Live smoke scripts
 
 ---
 
-## Second guardrail: Answer Relevancy
+## The three guardrails
 
-Built on the same pattern (`GUARDRAILS_BLUEPRINT.md`), this guardrail checks
-whether the answer actually addresses the user's question — reference-free,
-using DeepEval's `AnswerRelevancyMetric` (needs only `input` + `actual_output`,
-**no evidence marker / retrieval context**). It is a fully independent
-guardrail with its own identity, so a team can enable faithfulness, relevancy,
-both, or neither.
+Built on the same pattern (`GUARDRAILS_BLUEPRINT.md`), each is a fully
+independent DeepEval RAG-metric guardrail with its own identity, so a team can
+enable any combination — one, two, all three, or none.
 
-| Concern | Faithfulness | Answer Relevancy |
-|---|---|---|
-| Class | `guardrail.hook.HallucinationGuardrail` | `guardrail.relevancy_hook.AnswerRelevancyGuardrail` |
-| `guardrail_name` | `hallucination-guardrail` | `answer-relevancy-guardrail` |
-| Needs evidence marker | yes | **no** (runs on any Q&A) |
-| Config namespace | `GUARDRAIL_FAITHFULNESS_*`, `GUARDRAIL_MODE` | `GUARDRAIL_ANSWER_RELEVANCY_*` |
-| Actionable detail | unsupported claims | irrelevant statements |
+| Concern | Faithfulness | Answer Relevancy | Contextual Relevancy |
+|---|---|---|---|
+| Grades | the answer vs evidence | the answer vs question | the **retriever** vs question |
+| Metric | `FaithfulnessMetric` | `AnswerRelevancyMetric` | `ContextualRelevancyMetric` |
+| Class | `hook.HallucinationGuardrail` | `relevancy_hook.AnswerRelevancyGuardrail` | `contextual_relevancy_hook.ContextualRelevancyGuardrail` |
+| `guardrail_name` | `hallucination-guardrail` | `answer-relevancy-guardrail` | `contextual-relevancy-guardrail` |
+| Fields | `input`, `actual_output`, `retrieval_context` | `input`, `actual_output` | `input`, `retrieval_context` |
+| Needs evidence marker | yes | **no** (any Q&A) | yes |
+| Default mode | remediate | remediate | **block** (or `observe`) |
+| Remediation | re-answer from evidence | re-answer on-topic | **none** — can't fix retrieval by re-prompting |
+| Config namespace | `GUARDRAIL_FAITHFULNESS_*`, `GUARDRAIL_MODE` | `GUARDRAIL_ANSWER_RELEVANCY_*` | `GUARDRAIL_CONTEXTUAL_RELEVANCY_*` |
+| Actionable detail | unsupported claims | irrelevant statements | irrelevant context |
 
 Shared plumbing (judge model, SSL, retries, retry temperature) uses the generic
-`GUARDRAIL_*` env vars. Register it as a **separate** entry in `config.yaml`
-alongside the faithfulness one (see `deploy/config.yaml`). Live smoke test:
-`python scripts/step_relevancy_smoke.py`.
+`GUARDRAIL_*` env vars. Each is a **separate** entry in `config.yaml` (see
+`deploy/config.yaml`) and enabled independently. Live smoke tests:
+`python scripts/step_relevancy_smoke.py`,
+`python scripts/step_contextual_relevancy_smoke.py`.
+
+> **Contextual Relevancy grades retrieval, not the answer.** A low score means
+> the retrieved context was off-topic for the question — which the LLM can't fix
+> by re-answering (retrieval happens upstream). So it `block`s (returns a safe
+> fallback) or, in `observe` mode, just logs the verdict as a retrieval-quality
+> signal without altering the response.
 
 ---
 
