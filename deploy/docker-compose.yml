@@ -1,0 +1,30 @@
+# Fresh, self-contained guardrail test stack.
+# Runs on port 4001 so it does not collide with any existing proxy on 4000.
+#
+#   cd deploy
+#   cp .env.example .env      # then put your real GROQ_API_KEY in .env
+#   docker compose up --build
+#
+services:
+  litellm-guardrail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: litellm-hallucination-guardrail:local
+    ports:
+      - "4001:4000"
+    env_file:
+      - .env
+    environment:
+      # Guardrail package lives at /app/guardrail (mounted below); make it
+      # importable as a package.
+      PYTHONPATH: /app
+      # Avoid DeepEval telemetry calls (noise / SSL) from inside the container.
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+    volumes:
+      # The guardrail package (from the repo) -> where litellm's loader looks.
+      - ../guardrail:/app/guardrail:ro
+      # The config file itself.
+      - ./config.guardrail.yaml:/app/config.guardrail.yaml:ro
+    command: ["--config", "/app/config.guardrail.yaml", "--port", "4000"]
+    restart: unless-stopped

@@ -1,0 +1,38 @@
+# Minimal LiteLLM config for validating the hallucination guardrail.
+# No database / MLflow here on purpose - this stack exists to prove the
+# guardrail end-to-end. The infra team layers DB, callbacks, etc. back on when
+# promoting to the production proxy.
+
+model_list:
+  # The model client requests go to (and that retries are routed back to).
+  - model_name: groq-test-model
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+
+  # The judge model. NOTE: the guardrail actually invokes the judge via the
+  # litellm SDK directly (see guardrail/groq_judge.py), not through this proxy
+  # entry - it is listed here only for documentation / manual testing.
+  - model_name: judge-model
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+
+litellm_settings:
+  ssl_verify: false     # corporate SSL interception (matches the prod proxy)
+  modify_params: true
+  stream: false         # the guardrail only blocks non-streaming responses
+
+guardrails:
+  - guardrail_name: "hallucination-guardrail"
+    litellm_params:
+      # Resolved by litellm's get_instance_fn relative to this config file's
+      # directory: <dir>/guardrail/hook.py -> class HallucinationGuardrail.
+      # Requires the guardrail package mounted at /app/guardrail and /app on
+      # PYTHONPATH (see Dockerfile / docker-compose.yml).
+      guardrail: guardrail.hook.HallucinationGuardrail
+      mode: "post_call"
+      default_on: true
+
+general_settings:
+  master_key: sk-123
