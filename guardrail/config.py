@@ -68,6 +68,27 @@ JUDGE_API_KEY = os.environ.get("GUARDRAIL_JUDGE_API_KEY")
 # response_format (DeepEval still parses JSON out of a plain-text reply).
 JUDGE_JSON_MODE = _get_bool("GUARDRAIL_JUDGE_JSON_MODE", True)
 
+# --- Answer Relevancy scoring --------------------------------------------
+# Own namespace so the answer-relevancy guardrail is configured, enabled, and
+# tuned completely independently of the faithfulness one (no mixups). The
+# generic settings below (judge model, SSL, retries, retry temperature) are
+# deliberately SHARED between guardrails; only the metric-specific knobs are
+# namespaced.
+#
+# A response passes when its answer-relevancy score is >= this threshold.
+ANSWER_RELEVANCY_THRESHOLD = _get_float("GUARDRAIL_ANSWER_RELEVANCY_THRESHOLD", 0.7)
+
+# block     : replace an off-topic response with the fallback message, no retry.
+# remediate : run the self-correction retry loop, then fall back if still bad.
+ANSWER_RELEVANCY_MODE = _get_str("GUARDRAIL_ANSWER_RELEVANCY_MODE", "remediate")
+
+# Message returned to the user when all retries still fail the relevancy check.
+ANSWER_RELEVANCY_FALLBACK_MESSAGE = _get_str(
+    "GUARDRAIL_ANSWER_RELEVANCY_FALLBACK_MESSAGE",
+    "I wasn't able to give you a focused answer to that question. Could you "
+    "rephrase it or add a little more detail so I can respond directly?",
+)
+
 # --- Logging -------------------------------------------------------------
 # Level for the guardrail's own logger. INFO surfaces every parse/skip/verdict/
 # remediation decision in the container logs so behaviour is observable.

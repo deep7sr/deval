@@ -8,9 +8,11 @@ correction-prompt content) is verified deterministically.
 import pytest
 
 from guardrail.grounding import GroundingVerdict
+from guardrail.relevancy import RelevancyVerdict
 from guardrail.remediation import (
     remediate,
     build_correction_prompt,
+    build_relevancy_correction_prompt,
     OUTCOME_PASSED_FIRST_TRY,
     OUTCOME_PASSED_AFTER_RETRY,
     OUTCOME_FALLBACK,
@@ -144,3 +146,54 @@ def test_correction_prompt_without_claims_is_still_valid():
     prompt = build_correction_prompt([])
     assert "not supported" in prompt
     assert "ONLY" in prompt
+
+
+# --- relevancy correction prompt + injectable build_prompt ---------------
+
+def test_relevancy_correction_prompt_with_statements():
+    prompt = build_relevancy_correction_prompt(["off-topic A", "tangent B"])
+    assert "off-topic A" in prompt
+    assert "tangent B" in prompt
+    assert "directly" in prompt
+
+
+def test_relevancy_correction_prompt_without_statements_is_still_valid():
+    prompt = build_relevancy_correction_prompt([])
+    assert "did not directly address" in prompt
+    assert "directly" in prompt
+
+
+@pytest.mark.asyncio
+async def test_injected_build_prompt_is_used_over_default():
+    # A relevancy-style verdict (no unsupported_claims attribute) must be able
+    # to drive the shared loop via an injected build_prompt.
+    seen_prompts = []
+
+    async def regenerate(correction, prev):
+        seen_prompts.append(correction)
+        return "corrected"
+
+    async def evaluate(q, o, c):
+        return RelevancyVerdict(score=1.0, passed=True, reason="")
+
+    initial = RelevancyVerdict(
+        score=0.2, passed=False, reason="", irrelevant_statements=["off-topic X"]
+    )
+
+    result = await remediate(
+        question="What is the capital of France?",
+        retrieval_context=[],
+        original_output="off-topic answer",
+        initial_verdict=initial,
+        evaluate=evaluate,
+        regenerate=regenerate,
+        max_retries=3,
+        time_budget=30.0,
+        fallback_message="FALLBACK",
+        build_prompt=lambda v: build_relevancy_correction_prompt(
+            v.irrelevant_statements
+        ),
+    )
+    assert result.outcome == OUTCOME_PASSED_AFTER_RETRY
+    assert len(seen_prompts) == 1
+    assert "off-topic X" in seen_prompts[0]

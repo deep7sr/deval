@@ -7,6 +7,7 @@ these run instantly and deterministically.
 
 from guardrail.parser import (
     parse_messages,
+    parse_final_user_message,
     SKIP_NO_MESSAGES,
     SKIP_NO_USER_MESSAGE,
     SKIP_USER_CONTENT_NOT_STRING,
@@ -196,3 +197,61 @@ def test_marker_with_no_trailing_content_skips():
     result = parse_messages(messages)
     assert result.compliant is False
     assert result.skip_reason == SKIP_EMPTY_EVIDENCE
+
+
+# --- parse_final_user_message (marker-free extraction for relevancy) ------
+
+def test_final_user_message_no_marker_needed():
+    # Answer Relevancy needs only the question - no evidence marker required.
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"},
+    ]
+    result = parse_final_user_message(messages)
+    assert result.compliant is True
+    assert result.input == "What is the capital of France?"
+    assert result.skip_reason is None
+
+
+def test_final_user_message_picks_last_user_turn():
+    messages = [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "an answer"},
+        {"role": "user", "content": "the real question"},
+    ]
+    result = parse_final_user_message(messages)
+    assert result.compliant is True
+    assert result.input == "the real question"
+
+
+def test_final_user_message_ignores_marker_content():
+    # Even when an evidence marker is present, relevancy just wants the question.
+    messages = [
+        {"role": "assistant", "content": MARKER + "\nsome evidence line"},
+        {"role": "user", "content": "why?"},
+    ]
+    result = parse_final_user_message(messages)
+    assert result.compliant is True
+    assert result.input == "why?"
+
+
+def test_final_user_message_empty_messages_skips():
+    result = parse_final_user_message([])
+    assert result.compliant is False
+    assert result.skip_reason == SKIP_NO_MESSAGES
+
+
+def test_final_user_message_no_user_skips():
+    messages = [{"role": "system", "content": "only a system prompt"}]
+    result = parse_final_user_message(messages)
+    assert result.compliant is False
+    assert result.skip_reason == SKIP_NO_USER_MESSAGE
+
+
+def test_final_user_message_non_string_content_skips():
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "parts array"}]},
+    ]
+    result = parse_final_user_message(messages)
+    assert result.compliant is False
+    assert result.skip_reason == SKIP_USER_CONTENT_NOT_STRING

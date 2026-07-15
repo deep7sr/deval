@@ -71,15 +71,41 @@ requests are passed through untouched (silently skipped).
 ```
 guardrail/            The guardrail package (this is what gets deployed)
   config.py           All tunables, overridable via env vars
-  parser.py           Contract parser
+  parser.py           Contract parser (+ marker-free parse_final_user_message)
   grounding.py        DeepEval FaithfulnessMetric wrapper
+  relevancy.py        DeepEval AnswerRelevancyMetric wrapper
   groq_judge.py       Judge model (litellm-backed DeepEvalBaseLLM)
-  remediation.py      Self-correction retry loop
-  hook.py             LiteLLM CustomGuardrail (post_call)
-tests/                Unit tests (28, no network) — run with: python -m pytest tests/ -q
+  remediation.py      Self-correction retry loop (shared; per-metric prompts)
+  hook.py             Faithfulness LiteLLM CustomGuardrail (post_call)
+  relevancy_hook.py   Answer-relevancy LiteLLM CustomGuardrail (post_call)
+tests/                Unit tests (no network) — run with: python -m pytest tests/ -q
 deploy/               Self-contained test stack (Dockerfile, compose, config.yaml)
 scripts/              Live smoke scripts
 ```
+
+---
+
+## Second guardrail: Answer Relevancy
+
+Built on the same pattern (`GUARDRAILS_BLUEPRINT.md`), this guardrail checks
+whether the answer actually addresses the user's question — reference-free,
+using DeepEval's `AnswerRelevancyMetric` (needs only `input` + `actual_output`,
+**no evidence marker / retrieval context**). It is a fully independent
+guardrail with its own identity, so a team can enable faithfulness, relevancy,
+both, or neither.
+
+| Concern | Faithfulness | Answer Relevancy |
+|---|---|---|
+| Class | `guardrail.hook.HallucinationGuardrail` | `guardrail.relevancy_hook.AnswerRelevancyGuardrail` |
+| `guardrail_name` | `hallucination-guardrail` | `answer-relevancy-guardrail` |
+| Needs evidence marker | yes | **no** (runs on any Q&A) |
+| Config namespace | `GUARDRAIL_FAITHFULNESS_*`, `GUARDRAIL_MODE` | `GUARDRAIL_ANSWER_RELEVANCY_*` |
+| Actionable detail | unsupported claims | irrelevant statements |
+
+Shared plumbing (judge model, SSL, retries, retry temperature) uses the generic
+`GUARDRAIL_*` env vars. Register it as a **separate** entry in `config.yaml`
+alongside the faithfulness one (see `deploy/config.yaml`). Live smoke test:
+`python scripts/step_relevancy_smoke.py`.
 
 ---
 

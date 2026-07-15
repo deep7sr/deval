@@ -41,6 +41,19 @@ guardrails:
       # "guardrails": ["hallucination-guardrail"] in the request body).
       default_on: true
 
+  # Answer Relevancy guardrail. A completely SEPARATE guardrail with its own
+  # identity and config namespace (GUARDRAIL_ANSWER_RELEVANCY_*). It needs no
+  # evidence marker / retrieval context - it runs on any Q&A request and checks
+  # whether the answer actually addresses the question. Enable it independently
+  # of the faithfulness guardrail (a team can have one, both, or neither).
+  - guardrail_name: "answer-relevancy-guardrail"
+    litellm_params:
+      # Resolved by litellm's get_instance_fn relative to this config file's
+      # directory: <dir>/guardrail/relevancy_hook.py -> AnswerRelevancyGuardrail.
+      guardrail: guardrail.relevancy_hook.AnswerRelevancyGuardrail
+      mode: "post_call"
+      default_on: true
+
 general_settings:
   master_key: sk-123
   # DB connection comes from the DATABASE_URL env var (set in docker-compose.yml),

@@ -13,7 +13,7 @@ The two collaborators are injected as async callables:
 
 import time
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional
+from typing import Any, Awaitable, Callable, List, Optional
 
 from .grounding import GroundingVerdict
 
@@ -53,6 +53,37 @@ def build_correction_prompt(unsupported_claims: List[str]) -> str:
     )
 
 
+def build_relevancy_correction_prompt(irrelevant_statements: List[str]) -> str:
+    """Turn the judge's irrelevant-statement list into a targeted correction.
+
+    The relevancy counterpart to ``build_correction_prompt``: instead of "stick
+    to the evidence", it says "answer the question directly and drop the
+    off-topic content".
+    """
+    if irrelevant_statements:
+        bullets = "\n".join(f"- {stmt}" for stmt in irrelevant_statements)
+        problem = (
+            "Your previous answer included statements that do NOT directly "
+            "address the user's question:\n" + bullets + "\n\n"
+        )
+    else:
+        problem = (
+            "Your previous answer did not directly address the user's "
+            "question.\n\n"
+        )
+    return (
+        problem
+        + "Answer the user's question again, directly and concisely. Address "
+        "exactly what was asked and leave out any off-topic, tangential, or "
+        "irrelevant content."
+    )
+
+
+def _default_build_prompt(verdict: "GroundingVerdict") -> str:
+    """Default prompt builder (faithfulness): correct unsupported claims."""
+    return build_correction_prompt(verdict.unsupported_claims)
+
+
 async def remediate(
     *,
     question: str,
@@ -64,8 +95,15 @@ async def remediate(
     max_retries: int,
     time_budget: float,
     fallback_message: str,
+    build_prompt: Optional[Callable[[Any], str]] = None,
     on_event: Optional[Callable[..., None]] = None,
 ) -> RemediationResult:
+    # Which correction prompt to emit each retry. Defaults to the faithfulness
+    # prompt (unsupported claims); the relevancy guardrail injects its own
+    # (irrelevant statements). This is the ONE metric-specific bit of the loop -
+    # everything else (early stop, retry counting, budget, fallback) is shared.
+    make_prompt = build_prompt if build_prompt is not None else _default_build_prompt
+
     def emit(event: str, **kwargs):
         if on_event is not None:
             on_event(event, **kwargs)
@@ -90,7 +128,7 @@ async def remediate(
             emit("time_budget_exceeded", attempt=attempt)
             break
 
-        correction = build_correction_prompt(current_verdict.unsupported_claims)
+        correction = make_prompt(current_verdict)
         current_output = await regenerate(correction, current_output)
         attempts = attempt
         current_verdict = await evaluate(question, current_output, retrieval_context)
