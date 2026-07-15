@@ -181,6 +181,18 @@ class HallucinationGuardrail(CustomGuardrail):
     @staticmethod
     def _set_output(response, text):
         try:
-            response.choices[0].message.content = text
+            message = response.choices[0].message
+            message.content = text
+            # The answer we're delivering is no longer the model's original
+            # generation, so any chain-of-thought it emitted (reasoning /
+            # reasoning_content) now describes a discarded answer. Clear it so
+            # the response can't ship a reasoning trace that contradicts the
+            # content we just wrote.
+            for attr in ("reasoning", "reasoning_content"):
+                if getattr(message, attr, None) is not None:
+                    try:
+                        setattr(message, attr, None)
+                    except (AttributeError, TypeError):
+                        pass
         except (AttributeError, IndexError, TypeError):
             verbose_logger.exception("failed to set guardrail output on response")
