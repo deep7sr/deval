@@ -157,12 +157,21 @@ guardrails:
     litellm_params:
       guardrail: guardrail.hook.HallucinationGuardrail
       mode: "post_call"
-      default_on: false      # opt-in per virtual key (see Step 5), NOT global
+      default_on: true       # runs on all traffic (open-source). See Step 5.
 ```
 
-`default_on: false` means the guardrail does **not** run on all traffic. Teams
-opt in by asking infra to enable it on their virtual key (Step 5). Requires the
-proxy to have a database (virtual keys are stored there).
+**Enablement model — read this before choosing `default_on`:**
+
+| Model | Open-source | Enterprise |
+|---|---|---|
+| Global (`default_on: true`) | ✅ | ✅ |
+| Per-key / per-team opt-in | ❌ needs `LITELLM_LICENSE` | ✅ |
+
+Attaching guardrails to a virtual key (`/key/generate` with
+`"guardrails": [...]`) is an **Enterprise** feature — on open-source it returns
+HTTP 403. So on open-source the choice is **global** (`default_on: true`) or
+**per-request** (the calling app includes `"guardrails":
+["hallucination-guardrail"]` in each request body).
 
 ### Step 4 — Provide the judge API key to the container
 
@@ -173,11 +182,15 @@ host shell). For the validated Groq judge:
 GROQ_API_KEY=gsk_…
 ```
 
-### Step 5 — Enable the guardrail on a team's virtual key (opt-in)
+### Step 5 — (Enterprise only) Enable per-key / per-team
 
-The guardrail is **always-on for any key it is attached to**, and off for every
-other key. A team requests coverage; infra enables it on that team's key. This
-is done entirely at the key level — no config edit or restart per team.
+> **Requires a LiteLLM Enterprise license.** On open-source, skip this — the
+> guardrail runs globally via `default_on: true` (Step 3). Attaching guardrails
+> to a key on open-source returns HTTP 403.
+
+With Enterprise, the guardrail can be **always-on for any key it is attached
+to**, and off for every other key. A team requests coverage; infra enables it on
+that team's key — no config edit or restart per team.
 
 **Attach to a new key:**
 ```bash

@@ -32,11 +32,14 @@ guardrails:
       # PYTHONPATH (see Dockerfile / docker-compose.yml).
       guardrail: guardrail.hook.HallucinationGuardrail
       mode: "post_call"
-      # OPT-IN per virtual key (not global). A team gets the guardrail only when
-      # infra attaches it to that team's virtual key via /key/generate or
-      # /key/update with: {"guardrails": ["hallucination-guardrail"]}.
-      # It is then always-on for that key - the team cannot disable it.
-      default_on: false
+      # default_on: true  -> runs on ALL traffic (open-source; what this stack uses).
+      #
+      # Per-KEY / per-TEAM opt-in ("infra enables it on a team's virtual key")
+      # requires a LiteLLM ENTERPRISE license (LITELLM_LICENSE). On open-source,
+      # attaching guardrails to a key via /key/generate returns HTTP 403. So on
+      # OSS the choice is global (default_on: true) or per-request (client passes
+      # "guardrails": ["hallucination-guardrail"] in the request body).
+      default_on: true
 
 general_settings:
   master_key: sk-123
