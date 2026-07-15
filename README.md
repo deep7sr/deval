@@ -73,13 +73,44 @@ guardrail/            The guardrail package (this is what gets deployed)
   config.py           All tunables, overridable via env vars
   parser.py           Contract parser
   grounding.py        DeepEval FaithfulnessMetric wrapper
+  contextual_relevancy.py       DeepEval ContextualRelevancyMetric wrapper
   groq_judge.py       Judge model (litellm-backed DeepEvalBaseLLM)
   remediation.py      Self-correction retry loop
-  hook.py             LiteLLM CustomGuardrail (post_call)
-tests/                Unit tests (28, no network) — run with: python -m pytest tests/ -q
+  hook.py             Faithfulness LiteLLM CustomGuardrail (post_call)
+  contextual_relevancy_hook.py  Contextual-relevancy CustomGuardrail (post_call)
+tests/                Unit tests (no network) — run with: python -m pytest tests/ -q
 deploy/               Self-contained test stack (Dockerfile, compose, config.yaml)
 scripts/              Live smoke scripts
 ```
+
+---
+
+## Second guardrail: Contextual Relevancy
+
+Built on the same pattern (`GUARDRAILS_BLUEPRINT.md`), this guardrail grades the
+**retriever** — is the retrieved context relevant to the question? — rather than
+the answer. It uses DeepEval's `ContextualRelevancyMetric` (needs `input` +
+`retrieval_context`), so it **reuses the same evidence-marker contract** as
+faithfulness and silently skips requests without a marker. It is a fully
+independent guardrail with its own identity, enabled separately.
+
+| Concern | Faithfulness | Contextual Relevancy |
+|---|---|---|
+| Grades | the answer vs evidence | the **retriever** vs question |
+| Class | `guardrail.hook.HallucinationGuardrail` | `guardrail.contextual_relevancy_hook.ContextualRelevancyGuardrail` |
+| `guardrail_name` | `hallucination-guardrail` | `contextual-relevancy-guardrail` |
+| Fields | `input`, `actual_output`, `retrieval_context` | `input`, `retrieval_context` |
+| Default mode | remediate | **block** (or `observe`) |
+| Remediation | re-answer from evidence | **none** — can't fix retrieval by re-prompting |
+| Config namespace | `GUARDRAIL_FAITHFULNESS_*`, `GUARDRAIL_MODE` | `GUARDRAIL_CONTEXTUAL_RELEVANCY_*` |
+| Actionable detail | unsupported claims | irrelevant context |
+
+Because it evaluates retrieval (which happens upstream in the caller's RAG
+pipeline), a low score can't be fixed by re-prompting the model — so it `block`s
+(returns a safe fallback) or, in `observe` mode, just logs the verdict as a
+retrieval-quality signal without altering the response. Register it as a
+**separate** entry in `config.yaml` (see `deploy/config.yaml`). Live smoke test:
+`python scripts/step_contextual_relevancy_smoke.py`.
 
 ---
 
