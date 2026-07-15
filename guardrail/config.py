@@ -27,12 +27,25 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
 # --- The contract marker -------------------------------------------------
 # Evidence lives in an assistant-role message whose content STARTS WITH this
 # exact string (exact spelling and spacing - note "Retrieved", not the
 # typo'd "Retreived" from early reference material). This is matched with a
 # plain, case-sensitive startswith() - no normalisation, no trimming.
 EVIDENCE_MARKER = _get_str("GUARDRAIL_EVIDENCE_MARKER", "--- Retrieved Evidence ---")
+
+# --- Networking ----------------------------------------------------------
+# Whether the guardrail's own litellm SDK calls (judge + retries) verify TLS.
+# Defaults to False to match the corporate proxy's ssl_verify: false; infra
+# can flip this to True once a proper CA bundle is in place.
+SSL_VERIFY = _get_bool("GUARDRAIL_SSL_VERIFY", False)
 
 # --- Faithfulness scoring ------------------------------------------------
 # A response passes when its faithfulness score is >= this threshold.
