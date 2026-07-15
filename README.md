@@ -99,6 +99,14 @@ Then send a request with the marker (see the contract example above) to
 `Authorization: Bearer sk-123`. Guardrail decisions are logged as `GUARDRAIL …`
 lines in `docker compose logs`.
 
+### Browser demo (for non-technical audiences)
+
+The stack also serves a point-and-click demo at **http://localhost:8090**.
+Click a preset case (grounded / hallucinated / partly-unsupported / no-evidence)
+and it generates the answer through the proxy, then shows the real faithfulness
+score, the verdict, the flagged claims, and what a guarded user would receive —
+no terminal needed.
+
 ---
 
 ## Deploying to the production LiteLLM — step by step

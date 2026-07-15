@@ -54,5 +54,30 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     restart: unless-stopped
 
+  # Non-technical browser demo: generates answers through the proxy above and
+  # reveals the real faithfulness score/verdict. Open http://localhost:8090
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: litellm-hallucination-guardrail:local
+    depends_on:
+      - litellm-guardrail
+    ports:
+      - "8090:8090"
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+      DEMO_PROXY_BASE_URL: http://litellm-guardrail:4000
+      DEMO_PROXY_KEY: sk-123
+      DEMO_MODEL: groq-test-model
+    volumes:
+      - ../guardrail:/app/guardrail:ro
+      - ../demo:/app/demo:ro
+    entrypoint: ["/app/.venv/bin/python", "-m", "uvicorn", "demo.app:app", "--host", "0.0.0.0", "--port", "8090"]
+    restart: unless-stopped
+
 volumes:
   guardrail_pgdata:
