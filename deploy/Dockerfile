@@ -9,7 +9,7 @@ USER root
 # DeepEval provides the FaithfulnessMetric used by the guardrail. litellm is
 # already present in the base image. Pinned to the version validated locally.
 RUN /app/.venv/bin/python -m ensurepip --upgrade \
-    && /app/.venv/bin/pip install --no-cache-dir "deepeval==4.1.0"
+    && /app/.venv/bin/python -m pip install --no-cache-dir "deepeval==4.1.0"
 
 # /app is where the guardrail package is mounted; putting it on PYTHONPATH lets
 # `guardrail.hook.HallucinationGuardrail` import as a package so its relative
