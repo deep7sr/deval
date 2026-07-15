@@ -25,6 +25,6 @@ services:
       # The guardrail package (from the repo) -> where litellm's loader looks.
       - ../guardrail:/app/guardrail:ro
       # The config file itself.
-      - ./config.guardrail.yaml:/app/config.guardrail.yaml:ro
-    command: ["--config", "/app/config.guardrail.yaml", "--port", "4000"]
+      - ./config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
     restart: unless-stopped
