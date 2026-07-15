@@ -9,6 +9,10 @@ Run:  python scripts/step4_smoke.py
 """
 
 import os
+import sys
+
+# Make the repo root importable no matter where this script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
 
