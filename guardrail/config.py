@@ -61,7 +61,6 @@ JUDGE_MODEL = _get_str("GUARDRAIL_JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
 LOG_LEVEL = _get_str("GUARDRAIL_LOG_LEVEL", "INFO")
 
 # --- Operating mode ------------------------------------------------------
-# monitor   : score + log only, never alter the response (safe rollout mode).
 # block     : replace an ungrounded response with FALLBACK_MESSAGE, no retry.
 # remediate : run the self-correction retry loop, then fall back if still bad.
 MODE = _get_str("GUARDRAIL_MODE", "remediate")

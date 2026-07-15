@@ -21,7 +21,6 @@ request ──► [1] Parser ──► non-compliant? ──► allow, skip (gua
                                           │
                                           ├─ passed ──► allow (return original response)
                                           └─ failed ──► [3] by MODE:
-                                                          monitor   → log only, allow
                                                           block     → replace with fallback
                                                           remediate → retry ≤3× → fallback
 ```
@@ -162,14 +161,7 @@ host shell). For the validated Groq judge:
 GROQ_API_KEY=gsk_…
 ```
 
-### Step 5 — Roll out in `monitor` mode first
-
-Set `GUARDRAIL_MODE=monitor` for the initial rollout. In this mode the guardrail
-**scores and logs but never alters responses** — so you can watch the
-false-positive rate on real traffic with zero user impact. Once the scores look
-right, switch to `remediate` (or `block`).
-
-### Step 6 — Verify
+### Step 5 — Verify
 
 Restart/redeploy and confirm the proxy boots with no import errors, then send a
 marker request and look for `GUARDRAIL … verdict: … passed=…` in the logs.
@@ -182,7 +174,7 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `GUARDRAIL_MODE` | `remediate` | `monitor` \| `block` \| `remediate` |
+| `GUARDRAIL_MODE` | `remediate` | `block` \| `remediate` |
 | `GUARDRAIL_JUDGE_MODEL` | `groq/llama-3.3-70b-versatile` | Judge model (litellm SDK id) |
 | `GUARDRAIL_FAITHFULNESS_THRESHOLD` | `0.7` | Pass if score ≥ threshold |
 | `GUARDRAIL_MAX_RETRIES` | `3` | Corrective retries before fallback |
@@ -197,7 +189,6 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 
 ## Operating modes
 
-- **`monitor`** — score + log only; never alter the response. Use for safe rollout.
 - **`block`** — replace an ungrounded response with the fallback message (no retry).
 - **`remediate`** *(default)* — retry the same model with the specific unsupported
   claims (≤ `MAX_RETRIES`, within the time budget), then fall back if still ungrounded.

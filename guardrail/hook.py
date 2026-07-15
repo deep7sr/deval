@@ -6,7 +6,7 @@ Wires the three decoupled pieces together on LiteLLM's
     parse request  ->  non-compliant?  ->  allow, skip (rule 7)
                        compliant       ->  score grounding
                                            passed  -> allow
-                                           failed  -> monitor / block / remediate
+                                           failed  -> block / remediate
 
 Regeneration during remediation goes through the proxy's Router (so the model
 alias and its configured API key resolve correctly) and therefore does NOT
@@ -94,14 +94,6 @@ class HallucinationGuardrail(CustomGuardrail):
         )
 
         if verdict.passed:
-            return response
-
-        if self.mode == "monitor":
-            verbose_logger.warning(
-                "guardrail MONITOR: ungrounded response allowed (score=%.3f) reason=%s",
-                verdict.score,
-                verdict.reason,
-            )
             return response
 
         if self.mode == "block":
