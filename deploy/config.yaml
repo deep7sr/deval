@@ -32,14 +32,13 @@ guardrails:
       # PYTHONPATH (see Dockerfile / docker-compose.yml).
       guardrail: guardrail.hook.HallucinationGuardrail
       mode: "post_call"
-      # default_on: true  -> runs on ALL traffic (open-source; what this stack uses).
-      #
-      # Per-KEY / per-TEAM opt-in ("infra enables it on a team's virtual key")
-      # requires a LiteLLM ENTERPRISE license (LITELLM_LICENSE). On open-source,
-      # attaching guardrails to a key via /key/generate returns HTTP 403. So on
-      # OSS the choice is global (default_on: true) or per-request (client passes
-      # "guardrails": ["hallucination-guardrail"] in the request body).
-      default_on: true
+      # default_on: false -> this guardrail runs ONLY when a request explicitly
+      # opts in by passing "guardrails": ["hallucination-guardrail"] in the body.
+      # This is what lets the demo invoke one guardrail at a time (nothing runs
+      # on a request that names no guardrail). Per-KEY attachment (infra enables
+      # it on a team's virtual key) is a LiteLLM ENTERPRISE feature; per-request
+      # body opt-in works on open-source.
+      default_on: false
 
   # Answer Relevancy guardrail. A completely SEPARATE guardrail with its own
   # identity and config namespace (GUARDRAIL_ANSWER_RELEVANCY_*). It needs no
@@ -52,7 +51,8 @@ guardrails:
       # directory: <dir>/guardrail/relevancy_hook.py -> AnswerRelevancyGuardrail.
       guardrail: guardrail.relevancy_hook.AnswerRelevancyGuardrail
       mode: "post_call"
-      default_on: true
+      # Opt-in per request: "guardrails": ["answer-relevancy-guardrail"].
+      default_on: false
 
   # Contextual Relevancy guardrail. Grades the RETRIEVER (is the retrieved
   # context relevant to the question?), not the answer - so it REQUIRES the
@@ -65,7 +65,8 @@ guardrails:
       # <dir>/guardrail/contextual_relevancy_hook.py -> ContextualRelevancyGuardrail
       guardrail: guardrail.contextual_relevancy_hook.ContextualRelevancyGuardrail
       mode: "post_call"
-      default_on: true
+      # Opt-in per request: "guardrails": ["contextual-relevancy-guardrail"].
+      default_on: false
 
 general_settings:
   master_key: sk-123
