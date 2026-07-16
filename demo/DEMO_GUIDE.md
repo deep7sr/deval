@@ -192,17 +192,28 @@ corrected to address the question directly.
 - **Needs the evidence marker.**
 - **Watch for:** `guardrail verdict: score=... passed=... irrelevant_context=N`
 
-### C1 — All context relevant → PASS (score ≈ 1.00)
+> **Calibration note (learned from live testing).** This metric is strict about
+> **question-specificity**: it judges each retrieved statement against the *exact*
+> question. A narrow question like "What is the capital of France?" makes the
+> judge rule that even "Paris is the **largest city**" is *not relevant* (wrong
+> attribute), so almost everything blocks. To get a clean PASS, the question must
+> be **broad enough** that the evidence genuinely bears on it. These cases use the
+> broad question **"Tell me about the city of Paris"** and vary only the evidence.
+> Scores are judge-driven — **re-run these on the VM before the demo** to confirm
+> they land as shown.
+
+### C1 — All context about Paris → PASS (score ≈ 1.00)
 ```bash
 curl -s http://localhost:4001/v1/chat/completions \
   -H "Authorization: Bearer sk-123" -H "Content-Type: application/json" \
   -d '{"model":"groq-test-model","guardrails":["contextual-relevancy-guardrail"],
        "messages":[
          {"role":"system","content":"Answer using only the retrieved evidence."},
-         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nParis is the most populous city in France."},
-         {"role":"user","content":"What is the capital of France?"}]}' | jq '{content:.choices[0].message.content}'
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nParis is the most populous city in France.\nParis sits on the river Seine."},
+         {"role":"user","content":"Tell me about the city of Paris."}]}' | jq '{content:.choices[0].message.content}'
 ```
-Both chunks are about Paris/France → **1.00**, passed.
+Every chunk is a fact about Paris and the question is about Paris → **≈ 1.00**,
+passed, answer delivered.
 
 ### C2 — Mostly relevant, one stray chunk → PARTIAL but PASSES (score ≈ 0.75)
 ```bash
@@ -211,12 +222,12 @@ curl -s http://localhost:4001/v1/chat/completions \
   -d '{"model":"groq-test-model","guardrails":["contextual-relevancy-guardrail"],
        "messages":[
          {"role":"system","content":"Answer using only the retrieved evidence."},
-         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nParis lies on the river Seine.\nParis is the largest city in France.\nRoquefort is a French cheese."},
-         {"role":"user","content":"Tell me about Paris as the capital of France."}]}' | jq '{content:.choices[0].message.content}'
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nParis is the most populous city in France.\nParis sits on the river Seine.\nRoquefort is a French cheese."},
+         {"role":"user","content":"Tell me about the city of Paris."}]}' | jq '{content:.choices[0].message.content}'
 ```
-3 of 4 chunks are relevant, 1 (cheese) is not → **≈ 0.75 ≥ 0.7 → PASS**
-(`irrelevant_context=1`). Shows a **partial score that is still acceptable** —
-good retrieval with a little noise.
+3 of 4 chunks bear on Paris, 1 (cheese) does not → **≈ 0.75 ≥ 0.7 → PASS**
+(`irrelevant_context=1`). A **partial score that is still acceptable** — good
+retrieval with a little noise.
 
 ### C3 — Half-irrelevant retrieval → PARTIAL, BLOCKS (score ≈ 0.50)
 ```bash
@@ -225,16 +236,25 @@ curl -s http://localhost:4001/v1/chat/completions \
   -d '{"model":"groq-test-model","guardrails":["contextual-relevancy-guardrail"],
        "messages":[
          {"role":"system","content":"Answer using only the retrieved evidence."},
-         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nParis is the largest city in France.\nBrie is a soft French cheese.\nThe TGV is a high-speed train network."},
-         {"role":"user","content":"What is the capital of France?"}]}' | jq '{content:.choices[0].message.content}'
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nParis is the most populous city in France.\nBrie is a soft French cheese.\nThe TGV is a high-speed train network."},
+         {"role":"user","content":"Tell me about the city of Paris."}]}' | jq '{content:.choices[0].message.content}'
 ```
-2 of 4 chunks relevant → **≈ 0.50 < 0.7 → BLOCK** (`irrelevant_context=2`). The
-answer is replaced with the "couldn't find relevant information" fallback. **This
-is the partial-score highlight for contextual** — a mixed retrieval that fails.
+2 of 4 chunks bear on Paris → **≈ 0.50 < 0.7 → BLOCK** (`irrelevant_context=2`).
+The answer is replaced with the "couldn't find relevant information" fallback.
+**This is the partial-score highlight for contextual** — mixed retrieval that fails.
 
 ### C4 (optional) — Mostly junk retrieval → strong BLOCK (score ≈ 0.25)
-Use the 1-relevant + 3-off-topic evidence block to show a decisive block if you
-want a starker contrast.
+```bash
+curl -s http://localhost:4001/v1/chat/completions \
+  -H "Authorization: Bearer sk-123" -H "Content-Type: application/json" \
+  -d '{"model":"groq-test-model","guardrails":["contextual-relevancy-guardrail"],
+       "messages":[
+         {"role":"system","content":"Answer using only the retrieved evidence."},
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nParis is the capital of France.\nBrie is a soft French cheese.\nSummers in the south of France are warm.\nThe TGV is a high-speed train network."},
+         {"role":"user","content":"Tell me about the city of Paris."}]}' | jq '{content:.choices[0].message.content}'
+```
+1 of 4 chunks bears on Paris → **≈ 0.25 → strong BLOCK** — a decisive contrast if
+you want to show a badly-retrieved case.
 
 ---
 
