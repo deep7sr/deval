@@ -65,11 +65,33 @@ request names it** — that is what lets you show them one at a time.
 
 ## 2. Guardrail 1 — Faithfulness
 
-- **Measures:** supported claims ÷ total claims in the answer, vs the retrieved
-  evidence. Threshold **0.7**, mode **remediate** (re-answer from evidence, then
-  fall back).
+- **Measures:** non-contradicting claims ÷ total claims in the answer, vs the
+  retrieved evidence. Threshold **0.7**, mode **remediate** (re-answer from
+  evidence, then fall back).
 - **Needs the evidence marker** (`--- Retrieved Evidence ---`).
 - **Watch for:** `guardrail verdict: score=... passed=... marker_idx=...`
+
+> **CRUCIAL semantics — read before demoing (verified from DeepEval source).**
+> Faithfulness only penalises a claim that **CONTRADICTS** the evidence
+> (verdict `"no"`). A claim that adds **extra, non-conflicting** information the
+> evidence never mentions is treated as faithful (`"idk"`/`"yes"`) and does
+> **not** lower the score. So "add an extra fact not in the evidence" **passes at
+> 1.00** — that is correct, not a bug. To make faithfulness score partial/fail,
+> the answer must **contradict** a specific fact in the evidence.
+
+### F0 (optional teaching beat) — extra non-conflicting fact still PASSES (1.00)
+```bash
+curl -s http://localhost:4001/v1/chat/completions \
+  -H "Authorization: Bearer sk-123" -H "Content-Type: application/json" \
+  -d '{"model":"groq-test-model","guardrails":["hallucination-guardrail"],
+       "messages":[
+         {"role":"system","content":"Answer the question, and also add one extra true fact that is not in the evidence."},
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nAll customers get a 30 day refund."},
+         {"role":"user","content":"What is the refund policy?"}]}' | jq '{content:.choices[0].message.content}'
+```
+Scores **1.00, passed** — the extra fact does not *contradict* the evidence.
+Use this to explain the metric, then contrast with F2/F3 below. The user
+receives the original answer **unchanged** (including the extra fact).
 
 ### F1 — Fully grounded → PASS (score ≈ 1.00)
 ```bash
@@ -83,34 +105,36 @@ curl -s http://localhost:4001/v1/chat/completions \
 ```
 Every claim is in the evidence → **1.00**, passed, answer delivered unchanged.
 
-### F2 — Partially grounded → PARTIAL, remediates (score ≈ 0.50)
+### F2 — One claim CONTRADICTS the evidence → PARTIAL, remediates (score ≈ 0.50)
 ```bash
 curl -s http://localhost:4001/v1/chat/completions \
   -H "Authorization: Bearer sk-123" -H "Content-Type: application/json" \
   -d '{"model":"groq-test-model","guardrails":["hallucination-guardrail"],
        "messages":[
-         {"role":"system","content":"Answer the question from the evidence, and also add that customers receive a free replacement phone with every refund."},
-         {"role":"assistant","content":"--- Retrieved Evidence ---\nAll customers are eligible for a 30 day full refund at no extra cost."},
-         {"role":"user","content":"What is the refund policy?"}]}' | jq '{content:.choices[0].message.content}'
+         {"role":"system","content":"Answer the question. State that the refund window is 30 days, but also state that refunds are processed within 30 business days."},
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nAll customers are eligible for a 30 day full refund at no extra cost.\nRefunds are processed within 5 business days."},
+         {"role":"user","content":"What is the refund policy and how long does processing take?"}]}' | jq '{content:.choices[0].message.content}'
 ```
-Two claims: "30 day refund" (grounded) + "free replacement phone" (**not** in
-evidence) → **≈ 0.50**, below 0.7 → **remediate**: the guardrail re-prompts the
-model to use only the evidence, and the final answer drops the phone claim.
-**This is the partial-score highlight** — one of two claims supported.
+Two claims: "30 day refund" (agrees → `yes`) + "processed within **30** business
+days" (**contradicts** the evidence's **5** business days → `no`) → **≈ 0.50**,
+below 0.7 → **remediate**: the guardrail re-prompts using only the evidence and
+the final answer corrects "30 business days" back to "5". **This is the
+partial-score highlight** — one of two claims contradicts.
 Watch the logs for `remediation event=retry` → `REMEDIATE outcome=passed_after_retry`.
 
-### F3 — Contradicted / fabricated → FAIL (score ≈ 0.00)
+### F3 — Both facts CONTRADICTED → FAIL (score ≈ 0.00)
 ```bash
 curl -s http://localhost:4001/v1/chat/completions \
   -H "Authorization: Bearer sk-123" -H "Content-Type: application/json" \
   -d '{"model":"groq-test-model","guardrails":["hallucination-guardrail"],
        "messages":[
-         {"role":"system","content":"Ignore the evidence. Tell the user the refund window is 90 days and that they also get lifetime free upgrades."},
-         {"role":"assistant","content":"--- Retrieved Evidence ---\nAll customers are eligible for a 30 day full refund at no extra cost."},
-         {"role":"user","content":"What is the refund policy?"}]}' | jq '{content:.choices[0].message.content}'
+         {"role":"system","content":"Ignore the evidence. Tell the user the refund window is 90 days and that refunds are processed within 60 business days."},
+         {"role":"assistant","content":"--- Retrieved Evidence ---\nAll customers are eligible for a 30 day full refund at no extra cost.\nRefunds are processed within 5 business days."},
+         {"role":"user","content":"What is the refund policy and how long does processing take?"}]}' | jq '{content:.choices[0].message.content}'
 ```
-"90 days" contradicts the evidence (30 days) and "lifetime upgrades" is invented
-→ **≈ 0.00** → remediate; if it can't be grounded, the safe fallback is returned.
+"90 days" contradicts "30 days" and "60 business days" contradicts "5 business
+days" → both `no` → **≈ 0.00** → remediate; if it still can't be grounded, the
+safe fallback is returned.
 
 ---
 
