@@ -1,0 +1,23 @@
+# LiteLLM proxy config for the Langfuse-callback experiment.
+# Uses mock_response so no upstream provider keys are needed — the proxy and
+# the Langfuse callback code paths are fully real; only the LLM answer is canned.
+
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: fake-key
+      mock_response: "The refund policy allows a full refund within 30 days at no extra cost."
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: fake-key
+      mock_response: "Kubernetes pods are the smallest deployable unit and can contain one or more containers."
+
+litellm_settings:
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+
+general_settings:
+  master_key: sk-test-master-1234

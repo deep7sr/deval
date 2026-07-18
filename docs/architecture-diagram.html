@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif; background:#ffffff; width:1640px; }
+  .canvas { position:relative; width:1640px; height:1060px; background:#ffffff; }
+  .hdr { position:absolute; left:60px; top:36px; }
+  .hdr h1 { font-size:30px; font-weight:650; color:#0f172a; letter-spacing:-0.3px; }
+  .hdr p { font-size:16px; color:#64748b; margin-top:6px; }
+  .box { position:absolute; border-radius:12px; border:1.5px solid #e2e8f0; background:#ffffff; }
+  .group-title { font-size:15px; font-weight:650; letter-spacing:0.4px; text-transform:uppercase; padding:14px 18px 4px; }
+  .group-sub { font-size:12.5px; padding:0 18px 6px; color:#64748b; }
+  .inner { border-radius:8px; border:1px solid #e2e8f0; background:#fff; margin:8px 16px; padding:10px 14px; font-size:14px; color:#334155; }
+  .inner b { color:#0f172a; font-weight:600; display:block; margin-bottom:2px; font-size:14px;}
+  .inner span { font-size:12.5px; color:#64748b; }
+  .chip { display:inline-block; font-family:"SFMono-Regular",Consolas,monospace; font-size:11.5px; background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; border-radius:6px; padding:3px 8px; margin-top:6px;}
+  svg.wires { position:absolute; left:0; top:0; width:1640px; height:1060px; pointer-events:none; }
+  .lbl { position:absolute; font-size:12.5px; color:#475569; background:#ffffffee; padding:2px 6px; border-radius:4px; line-height:1.45; }
+  .legend { position:absolute; left:60px; top:962px; font-size:13px; color:#64748b; display:flex; gap:28px; align-items:center;}
+  .legend .sw { display:inline-block; width:34px; height:0; border-top:2.5px solid #475569; margin-right:8px; vertical-align:middle;}
+  .legend .swd { border-top:2.5px dashed #7c3aed; }
+  .stor { display:flex; gap:8px; margin:6px 16px 12px; }
+  .stor div { flex:1; text-align:center; font-size:12px; color:#475569; border:1px solid #ddd6fe; background:#faf5ff; border-radius:6px; padding:7px 4px; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="hdr">
+    <h1>LLM Evaluation Architecture &mdash; LiteLLM Gateway + Self-Hosted Langfuse</h1>
+    <p>Gateway-wide tracing and LLM-as-a-judge evaluation for all AI application traffic &mdash; zero changes required from application teams</p>
+  </div>
+
+  <!-- Apps -->
+  <div class="box" style="left:60px; top:150px; width:300px; height:308px; background:#f8fafc;">
+    <div class="group-title" style="color:#334155;">AI Applications</div>
+    <div class="group-sub">All teams &middot; no code changes</div>
+    <div class="inner"><b>App &mdash; Team A</b><span>chatbot</span></div>
+    <div class="inner"><b>App &mdash; Team B</b><span>RAG assistant</span></div>
+    <div class="inner"><b>App &mdash; Team N</b><span>internal copilots&hellip;</span></div>
+  </div>
+
+  <!-- LiteLLM -->
+  <div class="box" style="left:560px; top:150px; width:380px; height:308px; background:#eff6ff; border-color:#93c5fd;">
+    <div class="group-title" style="color:#1d4ed8;">LiteLLM Proxy&nbsp;&nbsp;(gateway)</div>
+    <div class="group-sub">Existing enterprise proxy &middot; Docker</div>
+    <div class="inner"><b>OpenAI-compatible endpoint</b><span>/v1/chat/completions &middot; virtual keys per team</span></div>
+    <div class="inner"><b>Logging callback</b><span>fires after response is returned &mdash; never blocks user traffic</span><br>
+      <span class="chip">success_callback: ["langfuse"]</span>
+      <span class="chip">failure_callback: ["langfuse"]</span>
+    </div>
+  </div>
+
+  <!-- Providers -->
+  <div class="box" style="left:1220px; top:150px; width:360px; height:308px; background:#f8fafc;">
+    <div class="group-title" style="color:#334155;">Frontier Models</div>
+    <div class="group-sub">Upstream providers</div>
+    <div class="inner"><b>Claude</b><span>Anthropic API</span></div>
+    <div class="inner"><b>GPT</b><span>OpenAI API</span></div>
+    <div class="inner"><b>Judge model</b><span>Groq free tier (now) &rarr; self-hosted Gemma / vLLM (later)</span></div>
+  </div>
+
+  <!-- Langfuse -->
+  <div class="box" style="left:400px; top:600px; width:700px; height:322px; background:#faf5ff; border-color:#c4b5fd;">
+    <div class="group-title" style="color:#6d28d9;">Langfuse&nbsp;&nbsp;(self-hosted &middot; open source &middot; MIT)</div>
+    <div class="group-sub">Runs entirely on company infrastructure &mdash; no data leaves the network</div>
+    <div style="display:flex;">
+      <div class="inner" style="flex:1;"><b>Web UI&nbsp; :3000</b><span>traces &middot; dashboards &middot; scores per team / model / time</span></div>
+      <div class="inner" style="flex:1;"><b>Worker</b><span>async ingestion &amp; eval execution</span></div>
+    </div>
+    <div class="inner" style="border-color:#c4b5fd;"><b>LLM-as-a-judge evaluators</b>
+      <span>Hallucination &middot; Helpfulness &middot; Toxicity &mdash; run on a <b style="display:inline;color:#6d28d9;">sampled</b> subset of live traces (~10%, configurable cost dial)</span></div>
+    <div class="stor"><div>Postgres</div><div>ClickHouse</div><div>Redis</div><div>MinIO&nbsp;(S3)</div></div>
+  </div>
+
+  <!-- Judge callout -->
+  <div class="box" style="left:1220px; top:660px; width:360px; height:240px; background:#fffbeb; border-color:#fcd34d;">
+    <div class="group-title" style="color:#b45309;">Eval Judge Path</div>
+    <div class="group-sub">Routed back through the gateway</div>
+    <div class="inner"><b>Judge = just another LiteLLM model</b><span>swapping Groq &rarr; in-house Gemma is a one-line LiteLLM config change; Langfuse never notices</span></div>
+    <div class="inner"><b>Scores attached to traces</b><span>0&ndash;1 score + judge reasoning per metric</span></div>
+  </div>
+
+  <!-- wires -->
+  <svg class="wires" viewBox="0 0 1640 1060">
+    <defs>
+      <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#475569"/></marker>
+      <marker id="ap" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7c3aed"/></marker>
+      <marker id="ab" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#b45309"/></marker>
+    </defs>
+    <!-- apps -> litellm -->
+    <line x1="362" y1="300" x2="554" y2="300" stroke="#475569" stroke-width="2.5" marker-end="url(#a)"/>
+    <!-- litellm -> providers -->
+    <line x1="942" y1="300" x2="1214" y2="300" stroke="#475569" stroke-width="2.5" marker-end="url(#a)"/>
+    <!-- litellm -> langfuse (async) -->
+    <path d="M 750 460 L 750 594" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="8 6" fill="none" marker-end="url(#ap)"/>
+    <!-- langfuse evaluator -> judge callout -->
+    <line x1="1102" y1="770" x2="1214" y2="770" stroke="#b45309" stroke-width="2.2" marker-end="url(#ab)"/>
+    <line x1="1214" y1="820" x2="1102" y2="820" stroke="#b45309" stroke-width="2.2" marker-end="url(#ab)"/>
+    <!-- judge -> litellm (dashed, routed via gateway) -->
+    <path d="M 1400 658 C 1400 520, 1100 480, 944 420" stroke="#b45309" stroke-width="2.2" stroke-dasharray="8 6" fill="none" marker-end="url(#ab)"/>
+  </svg>
+
+  <!-- wire labels -->
+  <div class="lbl" style="left:378px; top:262px;">OpenAI-format<br>requests</div>
+  <div class="lbl" style="left:1020px; top:262px;">forwarded to the<br>selected provider</div>
+  <div class="lbl" style="left:772px; top:495px; color:#6d28d9;">async trace export (fire-and-forget)<br>request + response &middot; tokens &middot; cost &middot; latency<br>100% of traffic &middot; out of the request path</div>
+  <div class="lbl" style="left:1120px; top:735px; color:#b45309;">judge prompt</div>
+  <div class="lbl" style="left:1112px; top:828px; color:#b45309;">score + reasoning</div>
+  <div class="lbl" style="left:1170px; top:508px; color:#b45309;">judge calls routed<br>through LiteLLM</div>
+
+  <div class="legend">
+    <span><span class="sw"></span>request path (synchronous)</span>
+    <span><span class="sw swd"></span>observability &amp; eval path (asynchronous &mdash; zero user-facing latency)</span>
+    <span style="margin-left:auto; margin-right:60px;">deval &middot; LLM gateway evaluation architecture &middot; July 2026</span>
+  </div>
+</div>
+</body>
+</html>
