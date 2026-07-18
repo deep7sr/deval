@@ -22,8 +22,12 @@ from deepeval.models import DeepEvalBaseLLM
 
 from . import config
 
-# Match the proxy's TLS behaviour for the guardrail's own outbound calls.
-litellm.ssl_verify = config.SSL_VERIFY
+# TLS for the guardrail's own outbound calls. Only override the process-wide
+# litellm setting when GUARDRAIL_SSL_VERIFY is explicitly configured; otherwise
+# inherit the proxy's own `litellm_settings.ssl_verify` so importing this
+# module can never silently change TLS verification for the whole proxy.
+if config.SSL_VERIFY_IS_SET:
+    litellm.ssl_verify = config.SSL_VERIFY
 
 
 class LiteLLMJudge(DeepEvalBaseLLM):
@@ -37,7 +41,13 @@ class LiteLLMJudge(DeepEvalBaseLLM):
         return self.model
 
     def _extra_kwargs(self, schema) -> dict:
-        kwargs = {}
+        # temperature 0 -> deterministic verdicts (same case scores the same on
+        # every request); timeout bounds each judge call so a hung endpoint
+        # can't stall the user's request for litellm's 10-minute default.
+        kwargs = {
+            "temperature": config.JUDGE_TEMPERATURE,
+            "timeout": config.JUDGE_TIMEOUT_SECONDS,
+        }
         # Structured-output mode. Some small/local models don't support the
         # json_object response_format; disable via GUARDRAIL_JUDGE_JSON_MODE=false.
         if schema is not None and config.JUDGE_JSON_MODE:

@@ -68,6 +68,7 @@ class UserMessageResult:
 SKIP_NO_MESSAGES = "no_messages"
 SKIP_NO_USER_MESSAGE = "no_user_message"
 SKIP_USER_CONTENT_NOT_STRING = "user_content_not_string"
+SKIP_EMPTY_USER_MESSAGE = "empty_user_message"
 SKIP_NO_MARKER = "no_marker_before_user"
 SKIP_EMPTY_EVIDENCE = "marker_present_but_no_evidence"
 
@@ -111,6 +112,11 @@ def _locate_final_user(
     # Rule 5: the user message content must be a plain string.
     if not _is_string(user_content):
         return None, None, SKIP_USER_CONTENT_NOT_STRING
+
+    # An empty / whitespace-only question gives the judge nothing to grade
+    # against - every metric verdict would be noise - so skip instead.
+    if not user_content.strip():
+        return None, None, SKIP_EMPTY_USER_MESSAGE
 
     return last_user_index, user_content, None
 

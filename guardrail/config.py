@@ -43,8 +43,12 @@ EVIDENCE_MARKER = _get_str("GUARDRAIL_EVIDENCE_MARKER", "--- Retrieved Evidence 
 
 # --- Networking ----------------------------------------------------------
 # Whether the guardrail's own litellm SDK calls (judge + retries) verify TLS.
-# Defaults to False to match the corporate proxy's ssl_verify: false; infra
-# can flip this to True once a proper CA bundle is in place.
+# Only applied when GUARDRAIL_SSL_VERIFY is explicitly set: the guardrail
+# then overrides litellm.ssl_verify process-wide. When unset, the guardrail
+# leaves litellm's TLS behaviour alone and inherits whatever the proxy's own
+# `litellm_settings.ssl_verify` configured - so importing the guardrail can
+# never silently downgrade TLS verification for the whole proxy.
+SSL_VERIFY_IS_SET = "GUARDRAIL_SSL_VERIFY" in os.environ
 SSL_VERIFY = _get_bool("GUARDRAIL_SSL_VERIFY", False)
 
 # --- Faithfulness scoring ------------------------------------------------
@@ -68,6 +72,17 @@ JUDGE_API_KEY = os.environ.get("GUARDRAIL_JUDGE_API_KEY")
 # response_format (DeepEval still parses JSON out of a plain-text reply).
 JUDGE_JSON_MODE = _get_bool("GUARDRAIL_JUDGE_JSON_MODE", True)
 
+# Sampling temperature for the judge. 0 makes verdicts as deterministic as the
+# provider allows - the same answer/evidence should score the same on every
+# request, which matters when the score gates production traffic.
+JUDGE_TEMPERATURE = _get_float("GUARDRAIL_JUDGE_TEMPERATURE", 0.0)
+
+# Per-call timeout (seconds) for each judge LLM call. Without one, a hung
+# judge endpoint stalls the user's request for litellm's default (10 minutes).
+# On timeout the metric raises and the hook fails open (response delivered
+# unscored), which is the intended degradation.
+JUDGE_TIMEOUT_SECONDS = _get_float("GUARDRAIL_JUDGE_TIMEOUT_SECONDS", 60.0)
+
 # --- Answer Relevancy scoring --------------------------------------------
 # Own namespace so the answer-relevancy guardrail is configured, enabled, and
 # tuned completely independently of the faithfulness one (no mixups). The
@@ -80,7 +95,11 @@ ANSWER_RELEVANCY_THRESHOLD = _get_float("GUARDRAIL_ANSWER_RELEVANCY_THRESHOLD", 
 
 # block     : replace an off-topic response with the fallback message, no retry.
 # remediate : run the self-correction retry loop, then fall back if still bad.
-ANSWER_RELEVANCY_MODE = _get_str("GUARDRAIL_ANSWER_RELEVANCY_MODE", "remediate")
+# Normalised (trim + lowercase) so "Block" / " BLOCK " behave as "block"; the
+# hook validates the value against its allowed modes and warns on typos.
+ANSWER_RELEVANCY_MODE = _get_str(
+    "GUARDRAIL_ANSWER_RELEVANCY_MODE", "remediate"
+).strip().lower()
 
 # Message returned to the user when all retries still fail the relevancy check.
 ANSWER_RELEVANCY_FALLBACK_MESSAGE = _get_str(
@@ -104,7 +123,10 @@ CONTEXTUAL_RELEVANCY_THRESHOLD = _get_float(
 #           context is judged irrelevant to the question (default).
 # observe : run the metric and log the verdict, but never alter the response
 #           (retrieval-quality signal only, for dashboards / shadow mode).
-CONTEXTUAL_RELEVANCY_MODE = _get_str("GUARDRAIL_CONTEXTUAL_RELEVANCY_MODE", "block")
+# Normalised (trim + lowercase); the hook validates against its allowed modes.
+CONTEXTUAL_RELEVANCY_MODE = _get_str(
+    "GUARDRAIL_CONTEXTUAL_RELEVANCY_MODE", "block"
+).strip().lower()
 
 # Message returned to the user when the retrieved context is irrelevant and the
 # guardrail is in block mode.
@@ -123,7 +145,8 @@ LOG_LEVEL = _get_str("GUARDRAIL_LOG_LEVEL", "INFO")
 # --- Operating mode ------------------------------------------------------
 # block     : replace an ungrounded response with FALLBACK_MESSAGE, no retry.
 # remediate : run the self-correction retry loop, then fall back if still bad.
-MODE = _get_str("GUARDRAIL_MODE", "remediate")
+# Normalised (trim + lowercase); the hook validates against its allowed modes.
+MODE = _get_str("GUARDRAIL_MODE", "remediate").strip().lower()
 
 # --- Remediation (self-correction retry loop) ----------------------------
 # When a response is judged ungrounded, re-prompt the SAME model that produced
@@ -145,3 +168,19 @@ FALLBACK_MESSAGE = _get_str(
     "I couldn't produce an answer grounded in the available information, "
     "so I'd rather not answer than risk giving you something inaccurate.",
 )
+
+
+def is_guardrail_fallback(text: str) -> bool:
+    """True when ``text`` is one of the guardrails' own fallback messages.
+
+    When several guardrails are enabled on the same key, an earlier hook may
+    have already replaced the response with its fallback. Scoring that fallback
+    with the NEXT metric is meaningless (a refusal is rarely "relevant" to the
+    question) and would trigger pointless remediation or double-replacement, so
+    every hook skips content that another guardrail already substituted.
+    """
+    return text in (
+        FALLBACK_MESSAGE,
+        ANSWER_RELEVANCY_FALLBACK_MESSAGE,
+        CONTEXTUAL_RELEVANCY_FALLBACK_MESSAGE,
+    )

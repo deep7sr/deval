@@ -82,11 +82,20 @@ class GroundingEvaluator:
         claims = getattr(metric, "claims", None) or []
         verdicts = getattr(metric, "verdicts", None) or []
         # claims[i] corresponds to verdicts[i]; a "no" verdict means the claim
-        # is not supported by (or contradicts) the retrieval context.
-        for claim, verdict in zip(claims, verdicts):
-            if str(getattr(verdict, "verdict", "")).strip().lower() == "no":
-                reason = getattr(verdict, "reason", None)
-                unsupported.append(f"{claim} ({reason})" if reason else str(claim))
+        # is not supported by (or contradicts) the retrieval context. If the
+        # judge returned a different number of verdicts than claims, the
+        # pairing is unreliable - fall back to the verdicts' own reasons so a
+        # wrong claim is never labelled as the unsupported one.
+        if len(claims) != len(verdicts):
+            for verdict in verdicts:
+                if str(getattr(verdict, "verdict", "")).strip().lower() == "no":
+                    reason = getattr(verdict, "reason", None)
+                    unsupported.append(reason or "unsupported claim")
+        else:
+            for claim, verdict in zip(claims, verdicts):
+                if str(getattr(verdict, "verdict", "")).strip().lower() == "no":
+                    reason = getattr(verdict, "reason", None)
+                    unsupported.append(f"{claim} ({reason})" if reason else str(claim))
 
         score = metric.score if metric.score is not None else 0.0
         return GroundingVerdict(

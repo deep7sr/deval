@@ -93,3 +93,18 @@ def test_none_score_treated_as_zero():
     result = evaluator._build_verdict(metric)
     assert result.score == 0.0
     assert result.passed is False
+
+
+def test_claims_verdicts_length_mismatch_uses_verdict_reasons():
+    # If the judge returns a different number of verdicts than claims, the
+    # index pairing is unreliable - the verdict's own reason is used instead of
+    # (mis)labelling a claim.
+    evaluator = GroundingEvaluator(threshold=0.7)
+    metric = _fake_metric(
+        score=0.5,
+        reason="",
+        claims=["claim one", "claim two", "claim three"],
+        verdicts=[_verdict("yes"), _verdict("no", "Contradicts the evidence.")],
+    )
+    result = evaluator._build_verdict(metric)
+    assert result.unsupported_claims == ["Contradicts the evidence."]

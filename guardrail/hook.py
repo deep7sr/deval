@@ -26,7 +26,7 @@ from litellm.integrations.custom_guardrail import CustomGuardrail
 from . import config
 from .grounding import GroundingEvaluator
 from .parser import parse_messages
-from .remediation import remediate
+from .remediation import in_remediation, remediate
 
 # Own logger with its own stdout handler so guardrail decisions always show up
 # in `docker logs`, regardless of how litellm/uvicorn configure the root logger.
@@ -40,7 +40,13 @@ if not verbose_logger.handlers:
     verbose_logger.setLevel(config.LOG_LEVEL.upper())
     verbose_logger.propagate = False
 
+# Tag attached to retry regenerations for log/spend attribution. NOT used as a
+# skip signal: request metadata is client-supplied, so trusting it would let a
+# caller bypass the guardrail by forging the flag in the request body. The
+# actual recursion guard is remediation.in_remediation() (a ContextVar).
 _RETRY_FLAG = "guardrail_retry"
+
+_ALLOWED_MODES = ("block", "remediate")
 
 
 class HallucinationGuardrail(CustomGuardrail):
@@ -51,6 +57,12 @@ class HallucinationGuardrail(CustomGuardrail):
         super().__init__(**kwargs)
         self.evaluator = GroundingEvaluator()
         self.mode = config.MODE
+        if self.mode not in _ALLOWED_MODES:
+            verbose_logger.warning(
+                "unknown GUARDRAIL_MODE %r; falling back to 'remediate' "
+                "(allowed: %s)", self.mode, ", ".join(_ALLOWED_MODES),
+            )
+            self.mode = "remediate"
 
     async def async_post_call_success_hook(self, data, user_api_key_dict, response):
         try:
@@ -66,9 +78,11 @@ class HallucinationGuardrail(CustomGuardrail):
         if not isinstance(response, litellm.ModelResponse):
             return response
 
-        # Defence in depth: never act on our own retry regenerations.
-        metadata = data.get("metadata") or {}
-        if metadata.get(_RETRY_FLAG):
+        # Defence in depth: never act on our own retry regenerations. Checked
+        # via a process-local ContextVar - request metadata is deliberately NOT
+        # trusted here, because a client could forge a metadata flag in the
+        # request body to bypass the guardrail.
+        if in_remediation():
             return response
 
         parse = parse_messages(data.get("messages"))
@@ -81,6 +95,15 @@ class HallucinationGuardrail(CustomGuardrail):
         actual_output = self._get_output(response)
         if not actual_output:
             verbose_logger.info("guardrail skip: no text output in response")
+            return response
+
+        # A previously-run guardrail already replaced this response with its
+        # fallback; scoring a refusal message is meaningless and would cause
+        # pointless remediation / double replacement.
+        if config.is_guardrail_fallback(actual_output):
+            verbose_logger.info(
+                "guardrail skip: response is another guardrail's fallback"
+            )
             return response
 
         verdict = await self.evaluator.a_evaluate(

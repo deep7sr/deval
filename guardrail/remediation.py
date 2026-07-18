@@ -11,6 +11,7 @@ The two collaborators are injected as async callables:
   * ``regenerate(correction_prompt, previous_output) -> str``
 """
 
+import contextvars
 import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, List, Optional
@@ -21,6 +22,23 @@ from .grounding import GroundingVerdict
 OUTCOME_PASSED_FIRST_TRY = "passed_first_try"
 OUTCOME_PASSED_AFTER_RETRY = "passed_after_retry"
 OUTCOME_FALLBACK = "fallback"
+
+# Recursion guard for the retry loop. Retry regenerations go through the proxy
+# Router, which does not re-enter guardrail hooks - but as defence in depth the
+# hooks short-circuit if they are ever invoked while a remediation is running
+# in the same request context. A ContextVar is used (not request metadata)
+# because metadata is client-supplied: a caller could forge a metadata flag in
+# the request body and silently bypass the guardrail. A ContextVar cannot be
+# influenced from outside the process, and each request task gets its own
+# context, so concurrent requests never see each other's flag.
+_IN_REMEDIATION: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "guardrail_in_remediation", default=False
+)
+
+
+def in_remediation() -> bool:
+    """True while a guardrail remediation loop is running in this context."""
+    return _IN_REMEDIATION.get()
 
 
 @dataclass
@@ -123,30 +141,50 @@ async def remediate(
     current_verdict = initial_verdict
     attempts = 0
 
-    for attempt in range(1, max_retries + 1):
-        if time.monotonic() - start > time_budget:
-            emit("time_budget_exceeded", attempt=attempt)
-            break
+    guard_token = _IN_REMEDIATION.set(True)
+    try:
+        for attempt in range(1, max_retries + 1):
+            if time.monotonic() - start > time_budget:
+                emit("time_budget_exceeded", attempt=attempt)
+                break
 
-        correction = make_prompt(current_verdict)
-        current_output = await regenerate(correction, current_output)
-        attempts = attempt
-        current_verdict = await evaluate(question, current_output, retrieval_context)
-        emit(
-            "retry",
-            attempt=attempt,
-            score=current_verdict.score,
-            passed=current_verdict.passed,
-        )
+            # The initial verdict already failed, so the original output must
+            # NOT reach the user. If a retry's regeneration or re-scoring call
+            # errors (rate limit, judge outage, ...), swallowing the attempt
+            # and proceeding to the fallback is the safe direction - letting
+            # the exception escape would hit the hook's fail-open handler and
+            # deliver the known-bad answer.
+            try:
+                correction = make_prompt(current_verdict)
+                regenerated = await regenerate(correction, current_output)
+                attempts = attempt
+                new_verdict = await evaluate(
+                    question, regenerated, retrieval_context
+                )
+            except Exception as exc:
+                attempts = attempt
+                emit("retry_error", attempt=attempt, error=repr(exc))
+                continue
 
-        if current_verdict.passed:
-            return RemediationResult(
-                final_output=current_output,
-                passed=True,
-                attempts=attempt,
-                outcome=OUTCOME_PASSED_AFTER_RETRY,
-                final_verdict=current_verdict,
+            current_output = regenerated
+            current_verdict = new_verdict
+            emit(
+                "retry",
+                attempt=attempt,
+                score=current_verdict.score,
+                passed=current_verdict.passed,
             )
+
+            if current_verdict.passed:
+                return RemediationResult(
+                    final_output=current_output,
+                    passed=True,
+                    attempts=attempt,
+                    outcome=OUTCOME_PASSED_AFTER_RETRY,
+                    final_verdict=current_verdict,
+                )
+    finally:
+        _IN_REMEDIATION.reset(guard_token)
 
     # Still ungrounded after all attempts (or budget exceeded) -> safe fallback.
     return RemediationResult(

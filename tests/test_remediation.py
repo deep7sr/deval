@@ -11,6 +11,7 @@ from guardrail.grounding import GroundingVerdict
 from guardrail.relevancy import RelevancyVerdict
 from guardrail.remediation import (
     remediate,
+    in_remediation,
     build_correction_prompt,
     build_relevancy_correction_prompt,
     OUTCOME_PASSED_FIRST_TRY,
@@ -146,6 +147,77 @@ def test_correction_prompt_without_claims_is_still_valid():
     prompt = build_correction_prompt([])
     assert "not supported" in prompt
     assert "ONLY" in prompt
+
+
+@pytest.mark.asyncio
+async def test_regeneration_error_falls_back_not_original():
+    # Once the initial verdict has FAILED, an exception during a retry must
+    # never surface (the hook's fail-open handler would deliver the known-bad
+    # original answer). The loop swallows the error and falls back.
+    async def regenerate(correction, prev):
+        raise RuntimeError("rate limited")
+
+    async def evaluate(q, o, c):
+        raise AssertionError("evaluate unreachable when regenerate raises")
+
+    result = await _run(_verdict(0.1, False, ["bad"]), evaluate, regenerate)
+    assert result.outcome == OUTCOME_FALLBACK
+    assert result.final_output == "FALLBACK"
+    assert result.passed is False
+
+
+@pytest.mark.asyncio
+async def test_evaluate_error_on_retry_falls_back():
+    async def regenerate(correction, prev):
+        return "regenerated"
+
+    async def evaluate(q, o, c):
+        raise RuntimeError("judge outage")
+
+    result = await _run(_verdict(0.1, False, ["bad"]), evaluate, regenerate)
+    assert result.outcome == OUTCOME_FALLBACK
+    assert result.final_output == "FALLBACK"
+
+
+@pytest.mark.asyncio
+async def test_transient_error_then_success_still_passes():
+    # First retry errors, second succeeds -> the loop recovers.
+    attempts = {"n": 0}
+
+    async def regenerate(correction, prev):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("transient")
+        return "corrected"
+
+    async def evaluate(q, o, c):
+        return _verdict(1.0, True)
+
+    result = await _run(_verdict(0.1, False, ["bad"]), evaluate, regenerate)
+    assert result.outcome == OUTCOME_PASSED_AFTER_RETRY
+    assert result.final_output == "corrected"
+    assert result.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_in_remediation_flag_set_during_loop_and_cleared_after():
+    seen = []
+
+    async def regenerate(correction, prev):
+        seen.append(in_remediation())
+        return "corrected"
+
+    async def evaluate(q, o, c):
+        seen.append(in_remediation())
+        return _verdict(1.0, True)
+
+    assert in_remediation() is False
+    await _run(_verdict(0.1, False), evaluate, regenerate)
+    # The guard is visible to nested calls (this is what lets a hook detect
+    # its own retry regenerations without trusting client metadata) ...
+    assert seen == [True, True]
+    # ... and is always cleared once the loop returns.
+    assert in_remediation() is False
 
 
 # --- relevancy correction prompt + injectable build_prompt ---------------

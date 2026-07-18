@@ -50,6 +50,9 @@ if not verbose_logger.handlers:
     verbose_logger.propagate = False
 
 
+_ALLOWED_MODES = ("block", "observe")
+
+
 class ContextualRelevancyGuardrail(CustomGuardrail):
     def __init__(self, **kwargs):
         # Strip our own non-CustomGuardrail params before calling super so
@@ -58,6 +61,12 @@ class ContextualRelevancyGuardrail(CustomGuardrail):
         super().__init__(**kwargs)
         self.evaluator = ContextualRelevancyEvaluator()
         self.mode = config.CONTEXTUAL_RELEVANCY_MODE
+        if self.mode not in _ALLOWED_MODES:
+            verbose_logger.warning(
+                "unknown GUARDRAIL_CONTEXTUAL_RELEVANCY_MODE %r; falling back "
+                "to 'block' (allowed: %s)", self.mode, ", ".join(_ALLOWED_MODES),
+            )
+            self.mode = "block"
 
     async def async_post_call_success_hook(self, data, user_api_key_dict, response):
         try:
@@ -72,6 +81,15 @@ class ContextualRelevancyGuardrail(CustomGuardrail):
     # ------------------------------------------------------------------
     async def _run(self, data, response):
         if not isinstance(response, litellm.ModelResponse):
+            return response
+
+        # A previously-run guardrail already replaced this response with its
+        # fallback; the delivered content is already a safe refusal, so don't
+        # spend judge calls or overwrite it a second time.
+        if config.is_guardrail_fallback(self._get_output(response) or ""):
+            verbose_logger.info(
+                "guardrail skip: response is another guardrail's fallback"
+            )
             return response
 
         # Needs retrieval_context -> requires the evidence marker, exactly like
@@ -119,6 +137,13 @@ class ContextualRelevancyGuardrail(CustomGuardrail):
         return response
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _get_output(response):
+        try:
+            return response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError):
+            return None
+
     @staticmethod
     def _set_output(response, text):
         try:

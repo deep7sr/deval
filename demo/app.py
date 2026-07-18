@@ -253,12 +253,13 @@ HTML_PAGE = r"""
 </div>
 <script>
 let CFG = null;
+function esc(x){ const d = document.createElement('div'); d.textContent = x == null ? '' : String(x); return d.innerHTML; }
 async function load() {
   CFG = await (await fetch('/config')).json();
   const cards = document.getElementById('cards');
   cards.innerHTML = CFG.scenarios.map(s =>
-    `<div class="card" onclick="run('${s.id}')">
-       <h3>${s.title}</h3><p>${s.description}</p>
+    `<div class="card" onclick="run('${esc(s.id)}')">
+       <h3>${esc(s.title)}</h3><p>${esc(s.description)}</p>
      </div>`).join('');
 }
 function pct(x){ return Math.round(x*100); }
@@ -275,10 +276,10 @@ async function run(id) {
 }
 function render(r) {
   const p = document.getElementById('panel');
-  if (r.error) { p.innerHTML = `<div class="row"><b style="color:var(--bad)">Error:</b> ${r.error}</div>`; p.classList.add('show'); return; }
+  if (r.error) { p.innerHTML = `<div class="row"><b style="color:var(--bad)">Error:</b> ${esc(r.error)}</div>`; p.classList.add('show'); return; }
 
   const evi = (r.evidence && r.evidence.length)
-      ? `<ul class="evi">${r.evidence.map(e=>`<li>${e}</li>`).join('')}</ul>`
+      ? `<ul class="evi">${r.evidence.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`
       : `<div class="meta">— none provided —</div>`;
 
   let scoreBlock = '';
@@ -294,7 +295,7 @@ function render(r) {
     const color = ok ? 'var(--ok)' : 'var(--bad)';
     const claims = (r.unsupported_claims && r.unsupported_claims.length)
       ? `<div class="row"><div class="label">Claims not supported by the evidence</div>
-           <ul class="claims">${r.unsupported_claims.map(c=>`<li>⚠️ ${c}</li>`).join('')}</ul></div>` : '';
+           <ul class="claims">${r.unsupported_claims.map(c=>`<li>⚠️ ${esc(c)}</li>`).join('')}</ul></div>` : '';
     scoreBlock = `
       <div class="row">
         <div class="label">Faithfulness score (0–100%, threshold ${thr}%)</div>
@@ -303,21 +304,21 @@ function render(r) {
           <span class="badge ${ok?'b-ok':'b-bad'}">${ok?'✅ Grounded — allowed':'⛔ Not grounded — blocked'}</span>
         </div>
         <div class="scorebar"><div class="scorefill" style="width:${p100}%; background:${color}"></div></div>
-        <div class="reason">${r.reason||''}</div>
+        <div class="reason">${esc(r.reason||'')}</div>
       </div>
       ${claims}`;
   }
 
   const deliveredOk = (r.guardrail_ran === false) || r.passed;
   const delivered = `<div class="row">
-      <div class="label">What the user receives ${r.guardrail_ran!==false ? '(mode: '+r.mode+')' : ''}</div>
-      <div class="delivered ${deliveredOk?'ok':'bad'}">${r.delivered}</div>
+      <div class="label">What the user receives ${r.guardrail_ran!==false ? '(mode: '+esc(r.mode)+')' : ''}</div>
+      <div class="delivered ${deliveredOk?'ok':'bad'}">${esc(r.delivered)}</div>
     </div>`;
 
   p.innerHTML = `
     <div class="row"><div class="label">Evidence provided to the AI</div>${evi}</div>
-    <div class="row"><div class="label">Question</div><div class="q">${r.question}</div></div>
-    <div class="row"><div class="label">AI's raw answer (from the proxy)</div><div class="answer">${r.answer}</div></div>
+    <div class="row"><div class="label">Question</div><div class="q">${esc(r.question)}</div></div>
+    <div class="row"><div class="label">AI's raw answer (from the proxy)</div><div class="answer">${esc(r.answer)}</div></div>
     ${scoreBlock}
     ${delivered}`;
   p.classList.add('show');

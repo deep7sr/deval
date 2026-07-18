@@ -1,7 +1,11 @@
-# Runtime dependencies for the LiteLLM + DeepEval hallucination guardrail.
-# Pinned loosely for now; the infra team can lock exact versions for prod.
-litellm
-deepeval
+# Runtime dependencies for the LiteLLM + DeepEval guardrails.
+# Pinned to the versions the guardrails were built and validated against:
+# the deploy image is ghcr.io/berriai/litellm:v1.92.0 (which ships litellm
+# 1.92.0) and deploy/Dockerfile installs deepeval==4.1.0 into it. Bump these
+# together and re-run the test suite + live smoke scripts when upgrading.
+litellm==1.92.0
+deepeval==4.1.0
 
 # Test-only
 pytest
+pytest-asyncio

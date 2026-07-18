@@ -79,13 +79,22 @@ class RelevancyEvaluator:
         statements = getattr(metric, "statements", None) or []
         verdicts = getattr(metric, "verdicts", None) or []
         # statements[i] corresponds to verdicts[i]; a "no" verdict means the
-        # statement does not address the question (off-topic / irrelevant).
-        for statement, verdict in zip(statements, verdicts):
-            if str(getattr(verdict, "verdict", "")).strip().lower() == "no":
-                reason = getattr(verdict, "reason", None)
-                irrelevant.append(
-                    f"{statement} ({reason})" if reason else str(statement)
-                )
+        # statement does not address the question (off-topic / irrelevant). If
+        # the judge returned a different number of verdicts than statements,
+        # the pairing is unreliable - fall back to the verdicts' own reasons so
+        # a wrong statement is never labelled as the irrelevant one.
+        if len(statements) != len(verdicts):
+            for verdict in verdicts:
+                if str(getattr(verdict, "verdict", "")).strip().lower() == "no":
+                    reason = getattr(verdict, "reason", None)
+                    irrelevant.append(reason or "irrelevant statement")
+        else:
+            for statement, verdict in zip(statements, verdicts):
+                if str(getattr(verdict, "verdict", "")).strip().lower() == "no":
+                    reason = getattr(verdict, "reason", None)
+                    irrelevant.append(
+                        f"{statement} ({reason})" if reason else str(statement)
+                    )
 
         score = metric.score if metric.score is not None else 0.0
         return RelevancyVerdict(

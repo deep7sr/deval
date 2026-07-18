@@ -21,7 +21,11 @@ model_list:
 litellm_settings:
   ssl_verify: false     # corporate SSL interception (matches the prod proxy)
   modify_params: true
-  stream: false         # the guardrail only blocks non-streaming responses
+  # NOTE: there is no litellm setting that forces requests to be non-streaming.
+  # These guardrails run on the post_call hook, which only covers stream:false
+  # responses - a request with stream:true is NOT scored (documented
+  # limitation). If streaming bypass matters for enforcement, the calling app
+  # must disallow stream:true, or a pre_call hook must reject it.
 
 guardrails:
   - guardrail_name: "hallucination-guardrail"

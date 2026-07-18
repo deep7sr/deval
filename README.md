@@ -269,13 +269,15 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 | `GUARDRAIL_JUDGE_API_BASE` | *(unset)* | Endpoint for a self-hosted judge (Ollama/vLLM/TGI) |
 | `GUARDRAIL_JUDGE_API_KEY` | *(unset)* | Key for the judge endpoint (dummy for local servers) |
 | `GUARDRAIL_JUDGE_JSON_MODE` | `true` | Request JSON-mode output; set false for models that don't support it |
+| `GUARDRAIL_JUDGE_TEMPERATURE` | `0.0` | Judge sampling temperature (0 = deterministic verdicts) |
+| `GUARDRAIL_JUDGE_TIMEOUT_SECONDS` | `60` | Per-call timeout for judge LLM calls (on timeout the hook fails open) |
 | `GUARDRAIL_FAITHFULNESS_THRESHOLD` | `0.7` | Pass if score ≥ threshold |
 | `GUARDRAIL_MAX_RETRIES` | `3` | Corrective retries before fallback |
 | `GUARDRAIL_RETRY_TIME_BUDGET_SECONDS` | `30` | Wall-clock cap on the retry loop |
 | `GUARDRAIL_RETRY_TEMPERATURE` | `0.3` | Temperature for retry regenerations |
 | `GUARDRAIL_EVIDENCE_MARKER` | `--- Retrieved Evidence ---` | Contract marker string |
 | `GUARDRAIL_FALLBACK_MESSAGE` | *(safe message)* | Returned when all retries fail |
-| `GUARDRAIL_SSL_VERIFY` | `false` | TLS verify for the guardrail's own calls |
+| `GUARDRAIL_SSL_VERIFY` | *(unset)* | When set, overrides `litellm.ssl_verify` process-wide for the guardrail's calls; when unset, the proxy's own `litellm_settings.ssl_verify` applies |
 | `GUARDRAIL_LOG_LEVEL` | `INFO` | Guardrail logger level |
 
 ---
@@ -315,7 +317,11 @@ The judge is addressed entirely through the LiteLLM SDK, so changing it is
 ## Known limitations (by design, documented)
 
 - **Non-streaming only.** LiteLLM's `post_call` guardrails cannot block streamed
-  responses; requests with `stream: true` are not covered.
+  responses; requests with `stream: true` are not covered. **This is also a
+  bypass vector for enforcement**: a caller who controls the request body can
+  set `stream: true` and skip the check entirely. If the guardrail is meant to
+  be mandatory for a key, the calling app must disallow streaming (or a
+  `pre_call` hook must reject `stream: true` for guarded keys).
 - **Added latency + cost.** Faithfulness is 2+ judge LLM calls; remediation adds a
   regeneration + re-score per retry. Budgeted via `RETRY_TIME_BUDGET_SECONDS`.
 - **Contract trust.** Anything that can write an `assistant` message could forge
@@ -329,5 +335,5 @@ The judge is addressed entirely through the LiteLLM SDK, so changing it is
 ## Tests
 
 ```bash
-python -m pytest tests/ -q      # 28 unit tests, no network required
+python -m pytest tests/ -q      # unit tests, no network required
 ```

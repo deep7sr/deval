@@ -11,6 +11,7 @@ from guardrail.parser import (
     SKIP_NO_MESSAGES,
     SKIP_NO_USER_MESSAGE,
     SKIP_USER_CONTENT_NOT_STRING,
+    SKIP_EMPTY_USER_MESSAGE,
     SKIP_NO_MARKER,
     SKIP_EMPTY_EVIDENCE,
 )
@@ -178,6 +179,17 @@ def test_no_user_message_skips():
     assert result.skip_reason == SKIP_NO_USER_MESSAGE
 
 
+def test_empty_user_message_skips():
+    # A blank / whitespace-only question gives the judge nothing to grade.
+    messages = [
+        {"role": "assistant", "content": MARKER + "\nfact"},
+        {"role": "user", "content": "   "},
+    ]
+    result = parse_messages(messages)
+    assert result.compliant is False
+    assert result.skip_reason == SKIP_EMPTY_USER_MESSAGE
+
+
 def test_marker_present_but_no_evidence_skips():
     messages = [
         {"role": "assistant", "content": MARKER + "\n   \n\n"},
@@ -255,3 +267,10 @@ def test_final_user_message_non_string_content_skips():
     result = parse_final_user_message(messages)
     assert result.compliant is False
     assert result.skip_reason == SKIP_USER_CONTENT_NOT_STRING
+
+
+def test_final_user_message_empty_content_skips():
+    messages = [{"role": "user", "content": ""}]
+    result = parse_final_user_message(messages)
+    assert result.compliant is False
+    assert result.skip_reason == SKIP_EMPTY_USER_MESSAGE

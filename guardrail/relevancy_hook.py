@@ -33,7 +33,7 @@ from litellm.integrations.custom_guardrail import CustomGuardrail
 from . import config
 from .parser import parse_final_user_message
 from .relevancy import RelevancyEvaluator
-from .remediation import build_relevancy_correction_prompt, remediate
+from .remediation import build_relevancy_correction_prompt, in_remediation, remediate
 
 # Own logger with its own stdout handler so guardrail decisions always show up
 # in `docker logs`, regardless of how litellm/uvicorn configure the root logger.
@@ -47,9 +47,14 @@ if not verbose_logger.handlers:
     verbose_logger.setLevel(config.LOG_LEVEL.upper())
     verbose_logger.propagate = False
 
-# Distinct from the faithfulness hook's flag so the two guardrails never
-# mistake each other's retry regenerations for their own.
+# Tag attached to retry regenerations for log/spend attribution (distinct from
+# the faithfulness hook's tag). NOT used as a skip signal: request metadata is
+# client-supplied, so trusting it would let a caller bypass the guardrail by
+# forging the flag in the request body. The actual recursion guard is
+# remediation.in_remediation() (a ContextVar).
 _RETRY_FLAG = "guardrail_relevancy_retry"
+
+_ALLOWED_MODES = ("block", "remediate")
 
 
 class AnswerRelevancyGuardrail(CustomGuardrail):
@@ -60,6 +65,12 @@ class AnswerRelevancyGuardrail(CustomGuardrail):
         super().__init__(**kwargs)
         self.evaluator = RelevancyEvaluator()
         self.mode = config.ANSWER_RELEVANCY_MODE
+        if self.mode not in _ALLOWED_MODES:
+            verbose_logger.warning(
+                "unknown GUARDRAIL_ANSWER_RELEVANCY_MODE %r; falling back to "
+                "'remediate' (allowed: %s)", self.mode, ", ".join(_ALLOWED_MODES),
+            )
+            self.mode = "remediate"
 
     async def async_post_call_success_hook(self, data, user_api_key_dict, response):
         try:
@@ -75,9 +86,11 @@ class AnswerRelevancyGuardrail(CustomGuardrail):
         if not isinstance(response, litellm.ModelResponse):
             return response
 
-        # Defence in depth: never act on our own retry regenerations.
-        metadata = data.get("metadata") or {}
-        if metadata.get(_RETRY_FLAG):
+        # Defence in depth: never act on our own retry regenerations. Checked
+        # via a process-local ContextVar - request metadata is deliberately NOT
+        # trusted here, because a client could forge a metadata flag in the
+        # request body to bypass the guardrail.
+        if in_remediation():
             return response
 
         parse = parse_final_user_message(data.get("messages"))
@@ -90,6 +103,15 @@ class AnswerRelevancyGuardrail(CustomGuardrail):
         actual_output = self._get_output(response)
         if not actual_output:
             verbose_logger.info("guardrail skip: no text output in response")
+            return response
+
+        # A previously-run guardrail already replaced this response with its
+        # fallback; scoring a refusal message is meaningless and would cause
+        # pointless remediation / double replacement.
+        if config.is_guardrail_fallback(actual_output):
+            verbose_logger.info(
+                "guardrail skip: response is another guardrail's fallback"
+            )
             return response
 
         verdict = await self.evaluator.a_evaluate(parse.input, actual_output)
