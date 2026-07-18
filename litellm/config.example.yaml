@@ -1,0 +1,39 @@
+# Example LiteLLM proxy config with Langfuse logging enabled for ALL traffic.
+# Adapt model_list to the real gateway config; the langfuse callback lines are
+# the only integration change.
+
+model_list:
+  # --- production models (examples) ---
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  # --- eval judge model (Groq for now; swap litellm_params to a self-hosted
+  #     Gemma/vLLM endpoint later without touching Langfuse) ---
+  - model_name: eval-judge
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+
+litellm_settings:
+  # The entire Langfuse integration: log every success and failure that passes
+  # through the proxy. Async / fire-and-forget — never blocks user traffic.
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+
+  # Uncomment to redact prompt/response content globally (metrics still logged):
+  # turn_off_message_logging: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+# Required environment variables for the callback (set on the container):
+#   LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   LANGFUSE_SECRET_KEY=sk-lf-...
+#   LANGFUSE_HOST=http://langfuse-web:3000
