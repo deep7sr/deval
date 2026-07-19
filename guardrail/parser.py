@@ -64,12 +64,41 @@ class UserMessageResult:
     skip_reason: Optional[str] = None
 
 
+@dataclass
+class ConversationParseResult:
+    """Outcome of parsing a request's ``messages`` into conversational turns.
+
+    Used by multi-turn metrics (Turn Faithfulness). When ``compliant`` is True:
+
+    * ``turns`` is the ordered conversation as plain dicts with keys ``role``
+      (``user``/``assistant``), ``content`` (str) and ``retrieval_context``
+      (list of evidence lines, or None). Evidence-marker messages are NOT
+      turns themselves - their lines are attached as ``retrieval_context`` to
+      the assistant answer that follows them.
+    * ``pending_context`` is the evidence from a marker that precedes the
+      final user message: it belongs to the assistant answer the model is
+      about to produce, so the hook attaches it to the response turn.
+    * ``input`` is the final user message (the question), for logging and
+      remediation.
+
+    When ``compliant`` is False, ``skip_reason`` says why the guardrail will
+    not run (silent skip / pass-through).
+    """
+
+    compliant: bool
+    turns: Optional[List[Dict[str, Any]]] = None
+    pending_context: Optional[List[str]] = None
+    input: Optional[str] = None
+    skip_reason: Optional[str] = None
+
+
 # --- skip reason codes (stable strings for logging/alerting) -------------
 SKIP_NO_MESSAGES = "no_messages"
 SKIP_NO_USER_MESSAGE = "no_user_message"
 SKIP_USER_CONTENT_NOT_STRING = "user_content_not_string"
 SKIP_NO_MARKER = "no_marker_before_user"
 SKIP_EMPTY_EVIDENCE = "marker_present_but_no_evidence"
+SKIP_NO_MARKER_IN_CONVERSATION = "no_marker_in_conversation"
 
 
 def _is_string(value: Any) -> bool:
@@ -129,6 +158,106 @@ def parse_final_user_message(
     if skip_reason is not None:
         return UserMessageResult(compliant=False, skip_reason=skip_reason)
     return UserMessageResult(compliant=True, input=user_content)
+
+
+def parse_conversation(
+    messages: Optional[List[Dict[str, Any]]],
+) -> ConversationParseResult:
+    """Parse a raw ``messages`` array into ordered conversational turns.
+
+    For multi-turn metrics (Turn Faithfulness) that grade the WHOLE
+    conversation, not just the final exchange. Deterministic and side-effect
+    free; the model's response turn is NOT this module's concern - the hook
+    appends it (with ``pending_context``) after the fact.
+
+    Rules (extending the same evidence-marker contract):
+      1. ``system`` messages are ignored; only ``user``/``assistant`` roles
+         become turns. Messages whose content is not a plain string are
+         skipped (rule 5 of the single-turn contract, applied per message).
+      2. An assistant message starting with EVIDENCE_MARKER is a retrieval
+         block, not a turn: its non-blank lines attach as
+         ``retrieval_context`` to the NEXT assistant answer turn. A marker
+         with no evidence lines is ignored.
+      3. If two markers appear with no assistant answer between them, the
+         later one wins (fresh retrieval supersedes stale).
+      4. The final user message is the question; its content must be a plain
+         string. Evidence still pending when the messages end (i.e. the
+         marker preceding the final question) is returned as
+         ``pending_context`` for the upcoming response turn.
+      5. At least one turn must be a user turn, and at least one marker with
+         evidence must exist somewhere in the conversation - otherwise there
+         is nothing to check faithfulness against and the guardrail skips.
+    """
+    if not messages:
+        return ConversationParseResult(compliant=False, skip_reason=SKIP_NO_MESSAGES)
+
+    turns: List[Dict[str, Any]] = []
+    pending_context: Optional[List[str]] = None
+    has_user = False
+    has_context = False
+    saw_nonstring_user = False
+
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        if role not in ("user", "assistant"):
+            continue
+        if not _is_string(content):
+            # Rule 5: content-parts arrays etc. can't be turns. Remember a
+            # dropped user message so the skip reason stays precise.
+            if role == "user":
+                saw_nonstring_user = True
+            continue
+
+        if role == "assistant" and content.startswith(EVIDENCE_MARKER):
+            evidence = _extract_evidence_lines(content)
+            if evidence:
+                pending_context = evidence
+                has_context = True
+            continue
+
+        if role == "user":
+            turns.append({"role": "user", "content": content, "retrieval_context": None})
+            has_user = True
+        else:
+            turns.append(
+                {
+                    "role": "assistant",
+                    "content": content,
+                    "retrieval_context": pending_context,
+                }
+            )
+            pending_context = None
+
+    if not has_user:
+        return ConversationParseResult(
+            compliant=False,
+            skip_reason=(
+                SKIP_USER_CONTENT_NOT_STRING
+                if saw_nonstring_user
+                else SKIP_NO_USER_MESSAGE
+            ),
+        )
+
+    if not turns or turns[-1]["role"] != "user":
+        # The request's last usable message must be the user's question (the
+        # model's answer to it is what we are guarding). A trailing user
+        # message with non-string content lands here too.
+        return ConversationParseResult(
+            compliant=False, skip_reason=SKIP_USER_CONTENT_NOT_STRING
+        )
+
+    if not has_context:
+        return ConversationParseResult(
+            compliant=False, skip_reason=SKIP_NO_MARKER_IN_CONVERSATION
+        )
+
+    return ConversationParseResult(
+        compliant=True,
+        turns=turns,
+        pending_context=pending_context,
+        input=turns[-1]["content"],
+    )
 
 
 def parse_messages(messages: Optional[List[Dict[str, Any]]]) -> ParseResult:

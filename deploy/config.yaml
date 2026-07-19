@@ -68,6 +68,21 @@ guardrails:
       # Opt-in per request: "guardrails": ["contextual-relevancy-guardrail"].
       default_on: false
 
+  # Turn Faithfulness guardrail. The CONVERSATIONAL counterpart of the
+  # faithfulness guardrail: DeepEval's TurnFaithfulnessMetric scores every
+  # assistant answer in the conversation against the retrieval context of its
+  # own exchange (sliding-window evaluation), instead of grading only the
+  # final answer. Requires the same evidence-marker contract; each marker
+  # block attaches to the assistant answer that follows it. Independent
+  # identity / namespace (GUARDRAIL_TURN_FAITHFULNESS_*).
+  - guardrail_name: "turn-faithfulness-guardrail"
+    litellm_params:
+      # <dir>/guardrail/turn_faithfulness_hook.py -> TurnFaithfulnessGuardrail
+      guardrail: guardrail.turn_faithfulness_hook.TurnFaithfulnessGuardrail
+      mode: "post_call"
+      # Opt-in per request: "guardrails": ["turn-faithfulness-guardrail"].
+      default_on: false
+
 general_settings:
   master_key: sk-123
   # DB connection comes from the DATABASE_URL env var (set in docker-compose.yml),

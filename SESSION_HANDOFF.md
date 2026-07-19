@@ -33,6 +33,7 @@ settings), plus one evaluator + one hook per guardrail.
 | **Faithfulness** | `grounding.py` / `hook.py` → `HallucinationGuardrail` (`hallucination-guardrail`) | `FaithfulnessMetric` | answer vs evidence | yes | remediate | unsupported/contradicting claims | `marker_idx=` |
 | **Answer Relevancy** | `relevancy.py` / `relevancy_hook.py` → `AnswerRelevancyGuardrail` (`answer-relevancy-guardrail`) | `AnswerRelevancyMetric` | answer vs question | **no** (any Q&A) | remediate | irrelevant statements | `irrelevant=` |
 | **Contextual Relevancy** | `contextual_relevancy.py` / `contextual_relevancy_hook.py` → `ContextualRelevancyGuardrail` (`contextual-relevancy-guardrail`) | `ContextualRelevancyMetric` | **retriever** vs question | yes | **block** (no retry) | irrelevant context | `irrelevant_context=` |
+| **Turn Faithfulness** (4th, built on `claude/deepeval-turn-faithfulness-fkw26a`) | `turn_faithfulness.py` / `turn_faithfulness_hook.py` → `TurnFaithfulnessGuardrail` (`turn-faithfulness-guardrail`) | `TurnFaithfulnessMetric` (conversational) | every answer in the conversation vs its exchange's evidence | yes (≥1 marker anywhere) | remediate (final answer only) | unfaithful claims (deduped across windows) | `windows=` `unfaithful=` |
 
 - Fields per metric: Faithfulness = input+actual_output+retrieval_context;
   Answer Relevancy = input+actual_output; Contextual Relevancy =
@@ -58,6 +59,7 @@ faithfulness base; combined only for demo/handoff.
 | `claude/session-1v5577` | `1107b2a` | base + **Answer Relevancy** + reasoning-clear fix |
 | `claude/contextual-relevancy-guardrail` | `e31b0b6` | base + **Contextual Relevancy** only |
 | `claude/all-guardrails-demo` | `b6b24bb` | **ALL THREE** + `default_on:false` (per-request opt-in) + `demo/DEMO_GUIDE.md` + `demo/ARCHITECTURE.md` + demo-case fixes. **This is the demo branch.** |
+| `claude/deepeval-turn-faithfulness-fkw26a` | (this branch) | demo branch + **Turn Faithfulness** (4th guardrail, conversational): `parse_conversation` in `parser.py`, `turn_faithfulness.py`, `turn_faithfulness_hook.py`, config namespace `GUARDRAIL_TURN_FAITHFULNESS_*`, registered in `deploy/config.yaml`, smoke script. **Gotcha found & fixed:** deepeval 4.1.0's `TurnFaithfulnessMetric` (a) resolves prompt templates by class name — a subclass must pass `template_class` — and (b) returns verdicts as raw dicts with a custom string-returning judge, crashing its own scoring; the recording subclass coerces them to schema objects. |
 
 Naming convention going forward: `claude/<guardrail-name>-guardrail`. The
 answer-relevancy branch keeps its `session-1v5577` name (already approved).

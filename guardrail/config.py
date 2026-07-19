@@ -115,6 +115,37 @@ CONTEXTUAL_RELEVANCY_FALLBACK_MESSAGE = _get_str(
     "based on unrelated context.",
 )
 
+# --- Turn Faithfulness scoring ---------------------------------------------
+# Own namespace, independent of the other guardrails. Turn Faithfulness is the
+# CONVERSATIONAL counterpart of the single-turn faithfulness guardrail: it
+# scores the assistant's claims across the WHOLE conversation against the
+# retrieval context attached to each exchange (DeepEval TurnFaithfulnessMetric,
+# sliding-window evaluation), instead of grading only the final answer.
+#
+# A response passes when the conversation-level score is >= this threshold.
+TURN_FAITHFULNESS_THRESHOLD = _get_float("GUARDRAIL_TURN_FAITHFULNESS_THRESHOLD", 0.7)
+
+# block     : replace an unfaithful response with the fallback message, no retry.
+# remediate : run the self-correction retry loop, then fall back if still bad.
+# NOTE: remediation can only regenerate the FINAL answer; unfaithful claims in
+# already-delivered earlier turns cannot be fixed retroactively, so a long
+# unfaithful history may keep the conversation score below threshold even after
+# a clean regeneration.
+TURN_FAITHFULNESS_MODE = _get_str("GUARDRAIL_TURN_FAITHFULNESS_MODE", "remediate")
+
+# Sliding-window size (in unit interactions) used by TurnFaithfulnessMetric.
+# Each unit interaction in the conversation produces one evaluation window of
+# up to this many interactions, so longer conversations mean more judge calls.
+TURN_FAITHFULNESS_WINDOW_SIZE = _get_int("GUARDRAIL_TURN_FAITHFULNESS_WINDOW_SIZE", 10)
+
+# Message returned to the user when all retries still fail the check.
+TURN_FAITHFULNESS_FALLBACK_MESSAGE = _get_str(
+    "GUARDRAIL_TURN_FAITHFULNESS_FALLBACK_MESSAGE",
+    "I couldn't produce an answer that stays consistent with the information "
+    "retrieved during this conversation, so I'd rather not answer than risk "
+    "giving you something inaccurate.",
+)
+
 # --- Logging -------------------------------------------------------------
 # Level for the guardrail's own logger. INFO surfaces every parse/skip/verdict/
 # remediation decision in the container logs so behaviour is observable.

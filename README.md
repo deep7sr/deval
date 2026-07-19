@@ -71,15 +71,18 @@ requests are passed through untouched (silently skipped).
 ```
 guardrail/            The guardrail package (this is what gets deployed)
   config.py           All tunables, overridable via env vars
-  parser.py           Contract parser (+ marker-free parse_final_user_message)
+  parser.py           Contract parser (+ marker-free parse_final_user_message,
+                      multi-turn parse_conversation)
   grounding.py        DeepEval FaithfulnessMetric wrapper
   relevancy.py        DeepEval AnswerRelevancyMetric wrapper
   contextual_relevancy.py  DeepEval ContextualRelevancyMetric wrapper
+  turn_faithfulness.py     DeepEval TurnFaithfulnessMetric wrapper (multi-turn)
   groq_judge.py       Judge model (litellm-backed DeepEvalBaseLLM)
   remediation.py      Self-correction retry loop (shared; per-metric prompts)
   hook.py             Faithfulness LiteLLM CustomGuardrail (post_call)
   relevancy_hook.py   Answer-relevancy LiteLLM CustomGuardrail (post_call)
   contextual_relevancy_hook.py  Contextual-relevancy CustomGuardrail (post_call)
+  turn_faithfulness_hook.py     Turn-faithfulness CustomGuardrail (post_call)
 tests/                Unit tests (no network) — run with: python -m pytest tests/ -q
 deploy/               Self-contained test stack (Dockerfile, compose, config.yaml)
 scripts/              Live smoke scripts
@@ -87,36 +90,53 @@ scripts/              Live smoke scripts
 
 ---
 
-## The three guardrails
+## The four guardrails
 
 Built on the same pattern (`GUARDRAILS_BLUEPRINT.md`), each is a fully
 independent DeepEval RAG-metric guardrail with its own identity, so a team can
-enable any combination — one, two, all three, or none.
+enable any combination — from one to all four, or none.
 
-| Concern | Faithfulness | Answer Relevancy | Contextual Relevancy |
-|---|---|---|---|
-| Grades | the answer vs evidence | the answer vs question | the **retriever** vs question |
-| Metric | `FaithfulnessMetric` | `AnswerRelevancyMetric` | `ContextualRelevancyMetric` |
-| Class | `hook.HallucinationGuardrail` | `relevancy_hook.AnswerRelevancyGuardrail` | `contextual_relevancy_hook.ContextualRelevancyGuardrail` |
-| `guardrail_name` | `hallucination-guardrail` | `answer-relevancy-guardrail` | `contextual-relevancy-guardrail` |
-| Fields | `input`, `actual_output`, `retrieval_context` | `input`, `actual_output` | `input`, `retrieval_context` |
-| Needs evidence marker | yes | **no** (any Q&A) | yes |
-| Default mode | remediate | remediate | **block** (or `observe`) |
-| Remediation | re-answer from evidence | re-answer on-topic | **none** — can't fix retrieval by re-prompting |
-| Config namespace | `GUARDRAIL_FAITHFULNESS_*`, `GUARDRAIL_MODE` | `GUARDRAIL_ANSWER_RELEVANCY_*` | `GUARDRAIL_CONTEXTUAL_RELEVANCY_*` |
-| Actionable detail | unsupported claims | irrelevant statements | irrelevant context |
+| Concern | Faithfulness | Answer Relevancy | Contextual Relevancy | Turn Faithfulness |
+|---|---|---|---|---|
+| Grades | the answer vs evidence | the answer vs question | the **retriever** vs question | **every answer in the conversation** vs its exchange's evidence |
+| Metric | `FaithfulnessMetric` | `AnswerRelevancyMetric` | `ContextualRelevancyMetric` | `TurnFaithfulnessMetric` (conversational) |
+| Class | `hook.HallucinationGuardrail` | `relevancy_hook.AnswerRelevancyGuardrail` | `contextual_relevancy_hook.ContextualRelevancyGuardrail` | `turn_faithfulness_hook.TurnFaithfulnessGuardrail` |
+| `guardrail_name` | `hallucination-guardrail` | `answer-relevancy-guardrail` | `contextual-relevancy-guardrail` | `turn-faithfulness-guardrail` |
+| Fields | `input`, `actual_output`, `retrieval_context` | `input`, `actual_output` | `input`, `retrieval_context` | `turns` (role, content, `retrieval_context` per turn) |
+| Needs evidence marker | yes | **no** (any Q&A) | yes | yes (≥1 marker anywhere in the conversation) |
+| Default mode | remediate | remediate | **block** (or `observe`) | remediate (final answer only) |
+| Remediation | re-answer from evidence | re-answer on-topic | **none** — can't fix retrieval by re-prompting | re-answer from evidence (earlier turns are already delivered) |
+| Config namespace | `GUARDRAIL_FAITHFULNESS_*`, `GUARDRAIL_MODE` | `GUARDRAIL_ANSWER_RELEVANCY_*` | `GUARDRAIL_CONTEXTUAL_RELEVANCY_*` | `GUARDRAIL_TURN_FAITHFULNESS_*` |
+| Actionable detail | unsupported claims | irrelevant statements | irrelevant context | unfaithful claims (deduped across windows) |
 
 Shared plumbing (judge model, SSL, retries, retry temperature) uses the generic
 `GUARDRAIL_*` env vars. Each is a **separate** entry in `config.yaml` (see
 `deploy/config.yaml`) and enabled independently. Live smoke tests:
 `python scripts/step_relevancy_smoke.py`,
-`python scripts/step_contextual_relevancy_smoke.py`.
+`python scripts/step_contextual_relevancy_smoke.py`,
+`python scripts/step_turn_faithfulness_smoke.py`.
 
 > **Contextual Relevancy grades retrieval, not the answer.** A low score means
 > the retrieved context was off-topic for the question — which the LLM can't fix
 > by re-answering (retrieval happens upstream). So it `block`s (returns a safe
 > fallback) or, in `observe` mode, just logs the verdict as a retrieval-quality
 > signal without altering the response.
+
+> **Turn Faithfulness grades the whole conversation, not just the final
+> answer.** DeepEval's `TurnFaithfulnessMetric` slides a window over the
+> conversation's unit interactions (window size
+> `GUARDRAIL_TURN_FAITHFULNESS_WINDOW_SIZE`, default 10); each window's
+> assistant claims are checked against truths extracted from that window's
+> retrieval context, and the final score is the mean across windows. The
+> parser (`parse_conversation`) turns the request's `messages` into turns: an
+> evidence-marker block attaches as `retrieval_context` to the assistant
+> answer that FOLLOWS it, and the marker preceding the final question attaches
+> to the new response. Two consequences worth knowing: (1) judge cost grows
+> with conversation length — one truths/claims/verdicts round per unit
+> interaction; (2) remediation regenerates only the final answer, so a
+> conversation whose earlier (already delivered) turns were unfaithful can
+> stay below threshold no matter how good the retry is — the remediation loop
+> then falls back to the safe message.
 
 ---
 
@@ -270,6 +290,10 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 | `GUARDRAIL_JUDGE_API_KEY` | *(unset)* | Key for the judge endpoint (dummy for local servers) |
 | `GUARDRAIL_JUDGE_JSON_MODE` | `true` | Request JSON-mode output; set false for models that don't support it |
 | `GUARDRAIL_FAITHFULNESS_THRESHOLD` | `0.7` | Pass if score ≥ threshold |
+| `GUARDRAIL_TURN_FAITHFULNESS_THRESHOLD` | `0.7` | Turn-faithfulness pass threshold |
+| `GUARDRAIL_TURN_FAITHFULNESS_MODE` | `remediate` | `block` or `remediate` (final answer only) |
+| `GUARDRAIL_TURN_FAITHFULNESS_WINDOW_SIZE` | `10` | Sliding-window size (unit interactions) |
+| `GUARDRAIL_TURN_FAITHFULNESS_FALLBACK_MESSAGE` | *(safe message)* | Returned when all retries fail |
 | `GUARDRAIL_MAX_RETRIES` | `3` | Corrective retries before fallback |
 | `GUARDRAIL_RETRY_TIME_BUDGET_SECONDS` | `30` | Wall-clock cap on the retry loop |
 | `GUARDRAIL_RETRY_TEMPERATURE` | `0.3` | Temperature for retry regenerations |

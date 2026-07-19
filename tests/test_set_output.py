@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from guardrail.hook import HallucinationGuardrail
 from guardrail.relevancy_hook import AnswerRelevancyGuardrail
 from guardrail.contextual_relevancy_hook import ContextualRelevancyGuardrail
+from guardrail.turn_faithfulness_hook import TurnFaithfulnessGuardrail
 
 import pytest
 
@@ -18,6 +19,7 @@ _HOOKS = [
     HallucinationGuardrail,
     AnswerRelevancyGuardrail,
     ContextualRelevancyGuardrail,
+    TurnFaithfulnessGuardrail,
 ]
 
 
