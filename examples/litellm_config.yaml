@@ -1,29 +1,43 @@
-# LiteLLM proxy config — MLflow tracing + self-hosted OSS judge model
+# LiteLLM proxy config — MLflow tracing + LLM-as-a-judge
+#
+# This file is set up for LOCAL DEV / DEMO using a Groq API key. Groq is
+# OpenAI-compatible and serves open-source / open-weight models (gpt-oss, Qwen,
+# Llama), so it is a faithful stand-in for the self-hosted OSS judge that will run
+# in production. Going to production is a ONE-LINE change (see the `judge` block).
 #
 # Docs: https://docs.litellm.ai/docs/observability/mlflow
+#       https://docs.litellm.ai/docs/providers/groq
 #
 # Requires `mlflow>=3.1.4` installed in the proxy image (see examples/Dockerfile).
 
 model_list:
-  # ---- App traffic (frontier models, routed as usual) -------------------
-  - model_name: gpt-4o
+  # ---- App under test (what we evaluate) --------------------------------
+  # For a self-contained demo this is also a Groq model, so the whole stack runs
+  # on a single GROQ_API_KEY. In prod this is whatever the app actually uses
+  # (gpt-4o, claude, ...) — teams keep sending their own model names.
+  - model_name: app-model
     litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_API_KEY
 
-  - model_name: claude-sonnet
+  # ---- The JUDGE model --------------------------------------------------
+  # MLflow always calls this as `openai:/judge` (provider-neutral name). Only the
+  # litellm_params below change between dev and prod — MLflow code never changes.
+  #
+  # DEV / DEMO (active): open-weight model on Groq.
+  - model_name: judge
     litellm_params:
-      model: anthropic/claude-sonnet-4-20250514
-      api_key: os.environ/ANTHROPIC_API_KEY
-
-  # ---- Self-hosted open-source JUDGE model ------------------------------
-  # Served locally by vLLM/Ollama/TGI and exposed here as OpenAI-compatible.
-  # MLflow calls this via `openai:/judge-qwen`. Data never leaves the network.
-  - model_name: judge-qwen
-    litellm_params:
-      model: openai/Qwen2.5-32B-Instruct
-      api_base: http://vllm:8000/v1
-      api_key: "none"
+      model: groq/openai/gpt-oss-120b   # alt: groq/qwen/qwen3-32b
+      api_key: os.environ/GROQ_API_KEY
+  #
+  # PRODUCTION (infra team swaps to this — same model_name: judge):
+  # - model_name: judge
+  #   litellm_params:
+  #     model: openai/Qwen2.5-32B-Instruct   # served locally, OpenAI-compatible
+  #     api_base: http://vllm:8000/v1        # self-hosted vLLM / TGI / Ollama
+  #     api_key: "none"
+  #
+  # ^ That is the entire dev -> prod change. No eval-code or MLflow change needed.
 
 litellm_settings:
   # Server-side MLflow tracing: every proxy request/response is logged.
@@ -32,5 +46,9 @@ litellm_settings:
 
 # MLflow connection is provided via environment variables on the container:
 #   MLFLOW_TRACKING_URI=http://mlflow:5000
-#   MLFLOW_EXPERIMENT_NAME=litellm-proxy-prod
+#   MLFLOW_EXPERIMENT_NAME=litellm-proxy-dev
 # (Do NOT set DATABRICKS_* — we self-host MLflow, we don't use Databricks.)
+#
+# NOTE: Groq model IDs change over time. `llama-3.3-70b-versatile` and
+# `llama-3.1-8b-instant` were deprecated (June 2026). Check the current roster at
+# https://console.groq.com/docs/models before running.

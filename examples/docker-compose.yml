@@ -1,11 +1,15 @@
-# Minimal stack: LiteLLM proxy (with MLflow tracing) + MLflow server + Postgres.
+# Local dev / demo stack: LiteLLM proxy (with MLflow tracing) + MLflow + Postgres.
 #
-# Not shown: the OSS judge server (vLLM/Ollama/TGI). Run it separately and make it
-# reachable at the api_base in litellm_config.yaml (e.g. http://vllm:8000/v1).
+# The judge (and app-under-test) run on Groq for dev, so this whole stack needs
+# only a GROQ_API_KEY — no local GPU, no OpenAI/Anthropic keys required.
 #
+#   cp .env.example .env   # then put your GROQ_API_KEY in it
 #   docker compose up -d
 #   - LiteLLM proxy : http://localhost:4000
 #   - MLflow UI      : http://localhost:5000  (Traces tab)
+#
+# For PRODUCTION the infra team runs the OSS judge (vLLM/Ollama/TGI) separately and
+# points the `judge` entry in litellm_config.yaml at it — see that file.
 
 services:
   postgres:
@@ -41,10 +45,9 @@ services:
     environment:
       # --- MLflow tracing target (self-hosted) ---
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      MLFLOW_EXPERIMENT_NAME: litellm-proxy-prod
-      # --- Provider keys for app traffic ---
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MLFLOW_EXPERIMENT_NAME: litellm-proxy-dev
+      # --- Judge + app model provider (dev) ---
+      GROQ_API_KEY: ${GROQ_API_KEY}
     volumes:
       - ./litellm_config.yaml:/app/config.yaml:ro
 

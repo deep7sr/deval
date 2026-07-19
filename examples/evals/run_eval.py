@@ -1,11 +1,14 @@
-"""Offline GenAI evaluation with MLflow, judged by a self-hosted OSS model.
+"""Offline GenAI evaluation with MLflow, judged via the LiteLLM proxy.
 
-The judge model runs on our own hardware and is reached THROUGH the LiteLLM proxy
-(OpenAI-compatible), so no eval data leaves the network and there is no frontier cost.
+The judge is reached THROUGH the LiteLLM proxy (OpenAI-compatible) as `openai:/judge`.
+In dev that `judge` model is an open-weight model on Groq; in production the infra
+team repoints the `judge` entry in the proxy to a self-hosted OSS model. THIS SCRIPT
+DOES NOT CHANGE between dev and prod — that is the whole point of the demo.
 
-Run:
-    export OPENAI_API_BASE=http://litellm:4000/v1     # our proxy, not api.openai.com
-    export OPENAI_API_KEY=sk-litellm-virtual-key       # a LiteLLM virtual key
+Run (dev):
+    export OPENAI_API_BASE=http://localhost:4000/v1   # our proxy, not api.openai.com
+    export OPENAI_API_KEY=sk-1234                      # a LiteLLM virtual key
+    export MLFLOW_TRACKING_URI=http://localhost:5000
     python run_eval.py
 
 Docs:
@@ -21,23 +24,27 @@ from mlflow.genai.scorers import Correctness, Guidelines, RelevanceToQuery
 from openai import OpenAI
 
 # --- MLflow connection ------------------------------------------------------
-mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
+mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000"))
 mlflow.set_experiment("litellm-eval")
 
-# The judge model, as registered in the LiteLLM proxy (see litellm_config.yaml).
-# MLflow uses provider:/model URIs; openai:/ + OPENAI_API_BASE routes to our proxy.
-JUDGE = "openai:/judge-qwen"
+# The judge, as registered in the proxy (model_name: judge). Provider-neutral:
+# dev = Groq open-weight model, prod = self-hosted OSS model. openai:/ + the
+# OPENAI_API_BASE below route the judge call through our proxy either way.
+JUDGE = "openai:/judge"
 
-# --- The app under test: call it through the same proxy ---------------------
+# The app under test — also called through the proxy so it gets traced too.
+APP_MODEL = os.environ.get("APP_MODEL", "app-model")
+
+# --- The app under test -----------------------------------------------------
 proxy = OpenAI(
-    base_url=os.environ.get("OPENAI_API_BASE", "http://litellm:4000/v1"),
-    api_key=os.environ["OPENAI_API_KEY"],
+    base_url=os.environ.get("OPENAI_API_BASE", "http://localhost:4000/v1"),
+    api_key=os.environ.get("OPENAI_API_KEY", "sk-1234"),
 )
 
 
 def predict_fn(question: str) -> str:
     resp = proxy.chat.completions.create(
-        model="gpt-4o",  # whatever model the app actually uses
+        model=APP_MODEL,
         messages=[{"role": "user", "content": question}],
     )
     return resp.choices[0].message.content
@@ -67,7 +74,7 @@ data = [
     },
 ]
 
-# --- Run: every scorer is judged by the OSS model via the proxy -------------
+# --- Run: every scorer is judged by the `judge` model via the proxy ---------
 results = mlflow.genai.evaluate(
     data=data,
     predict_fn=predict_fn,
@@ -84,7 +91,7 @@ results = mlflow.genai.evaluate(
 )
 
 print("Aggregate metrics:", results.metrics)
-print("View per-row scores and judge rationale in the MLflow UI → Experiments → litellm-eval")
+print("View per-row scores + judge rationale in the MLflow UI -> Experiments -> litellm-eval")
 
 
 # --- Alternative: evaluate REAL logged production traffic -------------------
@@ -92,7 +99,7 @@ print("View per-row scores and judge rationale in the MLflow UI → Experiments 
 # we can score actual traffic instead of synthetic prompts:
 #
 #   traces = mlflow.search_traces(
-#       experiment_names=["litellm-proxy-prod"],
+#       experiment_names=["litellm-proxy-dev"],
 #       filter_string="tags.taskName = 'run_page_classification'",
 #       max_results=200,
 #   )
