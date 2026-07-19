@@ -1,0 +1,36 @@
+# LiteLLM proxy config — MLflow tracing + self-hosted OSS judge model
+#
+# Docs: https://docs.litellm.ai/docs/observability/mlflow
+#
+# Requires `mlflow>=3.1.4` installed in the proxy image (see examples/Dockerfile).
+
+model_list:
+  # ---- App traffic (frontier models, routed as usual) -------------------
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ---- Self-hosted open-source JUDGE model ------------------------------
+  # Served locally by vLLM/Ollama/TGI and exposed here as OpenAI-compatible.
+  # MLflow calls this via `openai:/judge-qwen`. Data never leaves the network.
+  - model_name: judge-qwen
+    litellm_params:
+      model: openai/Qwen2.5-32B-Instruct
+      api_base: http://vllm:8000/v1
+      api_key: "none"
+
+litellm_settings:
+  # Server-side MLflow tracing: every proxy request/response is logged.
+  success_callback: ["mlflow"]
+  failure_callback: ["mlflow"]
+
+# MLflow connection is provided via environment variables on the container:
+#   MLFLOW_TRACKING_URI=http://mlflow:5000
+#   MLFLOW_EXPERIMENT_NAME=litellm-proxy-prod
+# (Do NOT set DATABRICKS_* — we self-host MLflow, we don't use Databricks.)
