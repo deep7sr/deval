@@ -122,6 +122,7 @@ class TurnFaithfulnessEvaluator:
         judge_model: Optional[str] = None,
         threshold: Optional[float] = None,
         window_size: Optional[int] = None,
+        penalize_ambiguous_claims: Optional[bool] = None,
     ):
         self._judge = GroqJudge(judge_model or config.JUDGE_MODEL)
         self._threshold = (
@@ -132,6 +133,11 @@ class TurnFaithfulnessEvaluator:
             if window_size is not None
             else config.TURN_FAITHFULNESS_WINDOW_SIZE
         )
+        self._penalize_ambiguous_claims = (
+            penalize_ambiguous_claims
+            if penalize_ambiguous_claims is not None
+            else config.TURN_FAITHFULNESS_PENALIZE_AMBIGUOUS_CLAIMS
+        )
 
     def _make_metric(self, async_mode: bool) -> _RecordingTurnFaithfulnessMetric:
         return _RecordingTurnFaithfulnessMetric(
@@ -140,6 +146,7 @@ class TurnFaithfulnessEvaluator:
             include_reason=True,
             async_mode=async_mode,
             window_size=self._window_size,
+            penalize_ambiguous_claims=self._penalize_ambiguous_claims,
         )
 
     @staticmethod

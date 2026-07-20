@@ -138,6 +138,15 @@ TURN_FAITHFULNESS_MODE = _get_str("GUARDRAIL_TURN_FAITHFULNESS_MODE", "remediate
 # up to this many interactions, so longer conversations mean more judge calls.
 TURN_FAITHFULNESS_WINDOW_SIZE = _get_int("GUARDRAIL_TURN_FAITHFULNESS_WINDOW_SIZE", 10)
 
+# Whether an "idk" verdict (the judge can't confirm the claim is true OR
+# false against the truths) counts AGAINST faithfulness. Default False matches
+# DeepEval's own default: idk is treated as faithful (only "no" is penalized).
+# Flip to True if the judge is being lenient on claims that should have been a
+# clear contradiction but got marked ambiguous instead.
+TURN_FAITHFULNESS_PENALIZE_AMBIGUOUS_CLAIMS = _get_bool(
+    "GUARDRAIL_TURN_FAITHFULNESS_PENALIZE_AMBIGUOUS_CLAIMS", False
+)
+
 # Message returned to the user when all retries still fail the check.
 TURN_FAITHFULNESS_FALLBACK_MESSAGE = _get_str(
     "GUARDRAIL_TURN_FAITHFULNESS_FALLBACK_MESSAGE",

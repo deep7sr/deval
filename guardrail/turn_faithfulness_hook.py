@@ -104,12 +104,17 @@ class TurnFaithfulnessGuardrail(CustomGuardrail):
             self._full_turns(parse, actual_output)
         )
         verbose_logger.info(
-            "guardrail verdict: score=%.3f passed=%s windows=%d unfaithful=%d",
+            "guardrail verdict: score=%.3f passed=%s windows=%d unfaithful=%d reason=%s",
             verdict.score,
             verdict.passed,
             verdict.windows_evaluated,
             len(verdict.unfaithful_claims),
+            verdict.reason,
         )
+        if verdict.unfaithful_claims:
+            verbose_logger.info(
+                "guardrail unfaithful_claims: %s", verdict.unfaithful_claims
+            )
 
         if verdict.passed:
             return response

@@ -293,6 +293,7 @@ All read by `guardrail/config.py`; all optional (defaults shown).
 | `GUARDRAIL_TURN_FAITHFULNESS_THRESHOLD` | `0.7` | Turn-faithfulness pass threshold |
 | `GUARDRAIL_TURN_FAITHFULNESS_MODE` | `remediate` | `block` or `remediate` (final answer only) |
 | `GUARDRAIL_TURN_FAITHFULNESS_WINDOW_SIZE` | `10` | Sliding-window size (unit interactions) |
+| `GUARDRAIL_TURN_FAITHFULNESS_PENALIZE_AMBIGUOUS_CLAIMS` | `false` | Treat `idk` verdicts as unfaithful too, not just `no` |
 | `GUARDRAIL_TURN_FAITHFULNESS_FALLBACK_MESSAGE` | *(safe message)* | Returned when all retries fail |
 | `GUARDRAIL_MAX_RETRIES` | `3` | Corrective retries before fallback |
 | `GUARDRAIL_RETRY_TIME_BUDGET_SECONDS` | `30` | Wall-clock cap on the retry loop |
