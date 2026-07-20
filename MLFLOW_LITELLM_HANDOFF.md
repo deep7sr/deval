@@ -48,7 +48,9 @@ faithfulness, then hand it to infra to productionize.
 | **Native scorers** in batch | ✅ | RelevanceToQuery, Safety, PIIDetection, Fluency, Guidelines, ResponseLength, RegexMatch (`eval_demo.py`) |
 | **Eval on real captured traces** | ✅ | `search_traces()` → `mlflow.genai.evaluate(data=traces, ...)` (`eval_on_traces.py`) |
 | **Auto-run** ("run on all future traces") | ✅ mechanism | requires `MLFLOW_SERVER_ENABLE_JOB_EXECUTION=true` (currently ON) |
-| Faithfulness | ⏳ TODO | see §9 — native `RetrievalGroundedness` does NOT work here (no RETRIEVER span) |
+| Faithfulness (Path A LLM-extract) | ✅ built | custom `make_judge` that extracts the marker from `{{ inputs }}` (`faithfulness_path_a.py`) — see §9 |
+| Faithfulness (Path B deterministic) | ✅ built | unit-tested marker parser + `@scorer` judging clean evidence (`evidence_marker.py` + `faithfulness_path_b.py`) — see §9 |
+| Faithfulness — VM validation run | ⏳ TODO | run `--validate` for A **and** B on the VM against `faithfulness_labeled_set.jsonl`; record agreement/precision (§9) |
 
 ---
 
@@ -205,41 +207,59 @@ MLflow judge model string = **`openai:/judge-model`** → resolves through the p
 
 ---
 
-## 9. ⏭️ NEXT TASK — Path A faithfulness (LLM-extract). PLAN ONLY, not yet built.
+## 9. ✅ Faithfulness — Path A **and** Path B BUILT. Remaining: run the VM validation.
 
-**Decision:** build faithfulness as a **custom LLM judge that extracts the marker context itself**
-(no code parser yet). Run it **offline + sampled**. If it works as intended, later build **Path B**
-(deterministic code parser reusing the guardrail contract logic) for production precision.
+Both paths are implemented and committed under `examples/evals/`. The deterministic
+half (Path B's parser) is unit-tested and green locally; the judge-dependent runs
+(Path A end-to-end, Path B's pass/fail verdicts) still need to be executed **on the
+VM** where the proxy + MLflow + Groq are reachable — this container has no MLflow/Groq.
 
-**Approach:**
-- Use a **custom judge** (`mlflow.genai.judges.make_judge`, or the UI "Create LLM judge" custom criteria).
-- It can only see `{{ inputs }}` (raw messages, incl. the marker message) and `{{ outputs }}` (the response).
-- **Judge instructions (to design):** roughly —
-  > "The retrieved evidence is inside the message whose content begins with the exact string
-  > `--- Retrieved Evidence ---`. Treat the text after that marker as the ONLY source of truth.
-  > Determine whether every factual claim in the response `{{ outputs }}` is supported by that evidence.
-  > If a message with the marker is not present, return NA/skip. Return pass/fail + a rationale, and
-  > (optionally) list unsupported claims."
-- **Judge model:** `llama-3.3-70b-versatile` (instruct) — via `openai:/judge-model` (through proxy) for
-  code runs, or a 70B AI Gateway endpoint for UI/auto-run.
-- **Execution:** offline + **sampled** — pull a sample of traces that contain the marker via `search_traces`,
-  run `mlflow.genai.evaluate` with this one custom judge. (Not on 100% of live traffic.)
+### Files (all in `examples/evals/`)
+| File | What it is |
+|---|---|
+| `evidence_marker.py` | **Deterministic contract parser** — exact marker, nearest-preceding rule, plain-string-only content, skip-if-absent. Pure Python, no deps. Path B core. |
+| `test_evidence_marker.py` | Unit tests for the parser (10 cases: typo/spacing, multi-turn, content-parts array, empty evidence, user-role evidence, …). **10/10 pass locally.** |
+| `faithfulness_path_a.py` | **Path A** — one `make_judge` custom judge that extracts the marker from `{{ inputs }}` itself. `--validate` scores the labeled set; `--sample-traces` scores real traffic. |
+| `faithfulness_path_b.py` | **Path B** — `@scorer` that parses deterministically then calls the instruct judge over *clean* evidence (skips silently when no marker). Plugs into `mlflow.genai.evaluate` / scheduled scorers. |
+| `faithfulness_labeled_set.jsonl` | **16 hand-labeled examples** (pass/fail/skip) shared by A & B: faithful, hallucinated-number/entity/channel/negation, faithful-refusal, multi-turn-nearest, multi-turn-against-stale, no-marker. All 16 are consistent with the deterministic parser (verified locally). |
 
-**Test cases to validate Path A:**
-1. Faithful response + marker present → **pass**.
-2. Hallucinated/unsupported response + marker present → **fail** (ideally names the unsupported claim).
-3. No marker present → **skip/NA** (not a false fail).
-4. Multi-turn with an older + a nearer marker → does the LLM use the **nearest-preceding** evidence?
-   (This is where Path A is fuzzy and Path B/code parser would be precise — note the result.)
-5. Validate against ~10–20 hand-labeled examples before trusting scores.
+### Design notes (what was decided while building)
+- **Path A** uses one `make_judge` judge; it can only see `{{ inputs }}` + `{{ outputs }}`
+  (reserved template vars only — handoff §6.6), so the marker rides in via `{{ inputs }}`
+  and the LLM extracts it. Emits categorical `pass`/`fail`/`skip`.
+- **Path B** does NOT use `make_judge` (can't inject a pre-parsed `{{ retrieval_context }}`).
+  It calls the judge directly through the proxy (`temperature=0`, JSON response) over the
+  parser's clean evidence, and wraps the result as an MLflow `Feedback`/`@scorer`. Returns
+  `None` to **skip** contract-free traffic (never a false fail). The parser matches the
+  guardrail contract exactly and is the one place the correctness risk lives — hence the
+  dedicated unit tests.
+- **Judge model:** `openai:/judge-model` → `llama-3.3-70b-versatile` (instruct) via the proxy
+  for code runs; a 70B AI Gateway endpoint for UI/auto-run. Overridable via
+  `FAITHFULNESS_JUDGE` / `FAITHFULNESS_JUDGE_MODEL`.
+- **Execution:** offline + **sampled** — `--sample-traces` over-fetches then keeps only
+  marker-bearing traces (via `search_traces(locations=[...])`) so the judge isn't run on
+  traffic that would just skip.
 
-**If Path A works → Path B (production):** a code-based `@scorer` that **deterministically** parses the
-marker (exact string `--- Retrieved Evidence ---`, **nearest-preceding-marker** rule, content-as-plain-string,
-skip if absent — reuse the guardrail parser logic already designed), then calls the judge with clean evidence.
-More precise, batch/scheduled, reusable.
+### ⏭️ What's left (do this on the VM)
+1. Export the judge env (§10), then run **both** validators and record the numbers:
+   ```bash
+   ~/mlflow-env/bin/python examples/evals/faithfulness_path_a.py            # 5 §9 cases
+   ~/mlflow-env/bin/python examples/evals/faithfulness_path_a.py --validate # labeled-set agreement
+   ~/mlflow-env/bin/python examples/evals/faithfulness_path_b.py            # labeled-set agreement
+   python examples/evals/test_evidence_marker.py                            # parser (no venv needed)
+   ```
+2. **Compare A vs B on the two multi-turn rows** (`multi_turn_uses_nearest`,
+   `multi_turn_hallucinated_against_nearest` / Path A case `4b`). Path A is fuzzy here —
+   it depends on the LLM honoring "nearest-preceding marker"; Path B enforces it in code.
+   Record whether Path A gets them right. This is the concrete evidence for "is the code
+   parser worth it."
+3. If Path A agreement is high and false-fails are low → Path A is demoable; **prefer Path B
+   for production** (deterministic, reproducible, cheaper — skip is free, no judge call).
+4. Feed results into the tech-lead decisions (§7): judge routing, opt-in vs mandatory contract.
 
-**Constraints to respect while building:** keep it offline+sampled; judge = instruct 70B; watch RAM
-(8 GB, no swap); don't route heavy judge traffic through the traced proxy in prod (pollution).
+**Constraints respected in the build:** offline+sampled; judge = instruct 70B; skip is free
+(no judge call on contract-free traffic → RAM/spend friendly); nothing here routes heavy judge
+traffic through the traced proxy by default beyond the existing dev setup (pollution — §6.3).
 
 ---
 
@@ -260,6 +280,13 @@ export DEEPEVAL_TELEMETRY_OPT_OUT=YES
 # --- Run the demos ---
 ~/mlflow-env/bin/python ~/litellm-proxy/eval_demo.py         # native variety pack
 ~/mlflow-env/bin/python ~/litellm-proxy/eval_on_traces.py    # eval on real captured traces
+
+# --- Faithfulness (§9): Path A (LLM-extract) & Path B (deterministic parse) ---
+python examples/evals/test_evidence_marker.py                       # parser unit tests (no venv/network)
+~/mlflow-env/bin/python examples/evals/faithfulness_path_a.py            # 5 §9 test cases
+~/mlflow-env/bin/python examples/evals/faithfulness_path_a.py --validate # Path A agreement on labeled set
+~/mlflow-env/bin/python examples/evals/faithfulness_path_b.py            # Path B agreement on labeled set
+~/mlflow-env/bin/python examples/evals/faithfulness_path_b.py --sample-traces  # Path B on sampled real traces
 
 # --- Send traffic through the proxy (generates a trace) ---
 curl -s http://localhost:4010/v1/chat/completions \
@@ -284,11 +311,13 @@ curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_AP
 - [ ] A test call to `:4010` returns a completion (key valid)
 - [ ] Judge env vars exported (§10)
 - [ ] Decide: job execution ON (auto-run, +1.4GB RAM) or OFF (reclaim RAM)
-- [ ] Then continue with **§9 Path A faithfulness**
+- [ ] **§9 faithfulness is BUILT (A + B).** Remaining: run the two validators on the VM and record
+      agreement/precision + the A-vs-B multi-turn comparison (see §9 "What's left").
 
 ---
 
-*Not yet done: faithfulness (Path A → Path B), external-scheduler automation script, the production
-handoff/runbook, and the tech-lead decisions in §7. The general integration guide + Groq examples live
-in `mlflow-litellm-integration.md` and `examples/` in this repo; the earlier guardrail design is in
-`litellm-deepeval-guardrail-context.md`.*
+*Not yet done: the **VM validation run** for faithfulness (code for Path A + Path B is committed and the
+parser is unit-tested; the judge-dependent runs still need the VM), external-scheduler automation script,
+the production handoff/runbook, and the tech-lead decisions in §7. The general integration guide + Groq
+examples live in `mlflow-litellm-integration.md` and `examples/` in this repo; the earlier guardrail design
+is in `litellm-deepeval-guardrail-context.md`.*
